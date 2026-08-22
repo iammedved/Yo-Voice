@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Overlay and desktop icon: the cat mascot now includes complete hind paws instead of a cropped canvas
+- Overlay, desktop icon, and README hero: two standing grey hind paws with pink toe beans; the extra belly paw and reversed black-boot soles are gone
+- README and changelog now say this program wherever they meant the program running in the background
 
 ## 1.0.0 — 2026-08-22
 
@@ -13,5 +14,5 @@ First public release of **Yo-Voice** (Ёхо).
 - Silero VAD so only speech is sent to Whisper
 - Microphone picker: right-click the cat
 - Hotkey: `ё` / `` ` `` (X11 keycode 49, the key left of `1`)
-- Autostart background daemon on login
+- Starts this program at login
 - Paste into the focused field via Ctrl+V (Ctrl+Shift+V in terminals)

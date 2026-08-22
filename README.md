@@ -15,7 +15,7 @@ It is not a cloud product. Microphone audio and transcripts stay on the computer
 - Speaks **Russian**. Punctuation and capitalization are cleaned up after recognition.
 - Shows a small **cat overlay** while listening: **Жду** (waiting / loading), **Можно говорить** (about one second after the mic is live), then **Слушаю** (listening). The waveform moves only while the microphone is actually capturing.
 - Lets you pick the microphone by **right-clicking the cat**.
-- Starts a background daemon at login, so the hotkey is ready without opening a window.
+- Starts this program at login, so the hotkey is ready without opening a window.
 
 ## What it cannot do
 
@@ -35,7 +35,7 @@ Developed and tested on **Linux Mint 22.3, Cinnamon, X11**. Other X11 desktops m
 
 - **Your speech never leaves this computer.** Recognition runs locally.
 - **Transcripts are not uploaded.** They are pasted into the focused app through the clipboard, then the previous clipboard contents are restored.
-- Config lives in `~/.config/yo-voice/`. Logs and the daemon socket live in `~/.cache/yo-voice/`.
+- Config lives in `~/.config/yo-voice/`. Logs live in `~/.cache/yo-voice/`.
 - The only expected network use is **install time** (Python packages) and the **first launch**, which downloads Whisper model weights (~1.6 GB) into a local cache. That download is model files, not your microphone.
 
 ## Hotkey
@@ -93,7 +93,7 @@ The installer:
 1. Creates `.venv` (with system GTK / X11 bindings)
 2. Installs Python dependencies, including CUDA libraries when available
 3. Puts a **Ёхо** launcher on the Desktop and in the application menu
-4. Enables **autostart** of the background daemon (`~/.config/autostart/yo-voice.desktop`, 3 second delay)
+4. Enables **autostart** of this program (`~/.config/autostart/yo-voice.desktop`, 3 second delay)
 5. Symlinks `yo-voice` into `~/.local/bin/`
 
 ### 4. First launch
@@ -109,7 +109,7 @@ Right-click the cat to choose the microphone (**Авто** = automatic).
 
 You do **not** need to open the app by hand.
 
-- After you log into Cinnamon, the **daemon starts by itself**.
+- After you log into Cinnamon, **this program starts by itself**.
 - Press **ё** / **\`** to start or stop listening.
 - The Desktop / menu icon toggles listening the same way.
 - First-run model download happens only once; later starts are local and fast on GPU.
@@ -117,13 +117,12 @@ You do **not** need to open the app by hand.
 Useful commands:
 
 ```bash
-yo-voice              # toggle listening (starts the daemon if needed)
-yo-voice daemon       # run the background daemon in this terminal
+yo-voice              # toggle listening (starts this program if needed)
 yo-voice status       # idle | listening
 yo-voice start        # start listening
 yo-voice stop         # stop and paste
 yo-voice settings     # microphone window
-yo-voice quit         # stop the daemon
+yo-voice quit         # quit this program
 yo-voice demo         # overlay demo without dictation
 ```
 
@@ -131,7 +130,7 @@ Re-run `./scripts/install.sh` after a `git pull` to refresh the venv and launche
 
 ## How a dictation pass works
 
-1. Hotkey (or the launcher) tells the daemon to listen.
+1. Hotkey (or the launcher) tells this program to listen.
 2. Overlay appears without stealing keyboard focus, so the caret stays in your app.
 3. Silero VAD keeps silence out of Whisper; only speech is transcribed.
 4. On a pause, the utterance is recognized locally and pasted with Ctrl+V (Ctrl+Shift+V in terminals).

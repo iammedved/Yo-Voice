@@ -6,9 +6,6 @@ from PIL import Image
 from yo.paths import orb_path, project_root
 
 PAD = 8
-PAW_DARK = 2_000
-PAW_PINK = 200
-PAW_SPAN = 200
 
 
 def _open_logo(path: Path) -> Image.Image:
@@ -23,12 +20,11 @@ def _opaque_bbox(im: Image.Image):
     return bbox
 
 
-def _hind_paw_band(im: Image.Image, bbox):
-    y1 = bbox[3]
-    y0 = max(bbox[1], y1 - 48)
-    dark = pink = 0
-    min_x = im.size[0]
-    max_x = 0
+def _band(im: Image.Image, bbox, y0_frac: float, y1_frac: float):
+    height = bbox[3] - bbox[1]
+    y0 = bbox[1] + int(height * y0_frac)
+    y1 = bbox[1] + int(height * y1_frac)
+    dark = grey = pink = 0
     for y in range(y0, y1):
         for x in range(bbox[0], bbox[2]):
             r, g, b, a = im.getpixel((x, y))
@@ -36,12 +32,11 @@ def _hind_paw_band(im: Image.Image, bbox):
                 continue
             if r < 55 and g < 55 and b < 55:
                 dark += 1
-                min_x = min(min_x, x)
-                max_x = max(max_x, x)
-            elif r > 160 and 70 <= g < 190 and b > 90:
+            elif r > 180 and g < 140 and (r - g) > 70 and b > 100:
                 pink += 1
-    span = 0 if dark == 0 else max_x - min_x
-    return dark, pink, span
+            elif abs(r - g) < 30 and abs(g - b) < 30 and 70 < r < 200:
+                grey += 1
+    return dark, grey, pink
 
 
 class MascotIdentityTests(unittest.TestCase):
@@ -81,13 +76,35 @@ class MascotIdentityTests(unittest.TestCase):
         self.assertLessEqual(right, w - PAD)
         self.assertLessEqual(bottom, h - PAD)
 
-    def test_logo_hind_paws_are_complete(self):
+    def test_logo_hind_paws_are_furry_not_reversed_black_boots(self):
         path = orb_path()
         im = _open_logo(path)
-        dark, pink, span = _hind_paw_band(im, _opaque_bbox(im))
-        self.assertGreaterEqual(dark, PAW_DARK)
-        self.assertGreaterEqual(pink, PAW_PINK)
-        self.assertGreaterEqual(span, PAW_SPAN)
+        dark, grey, _pink = _band(im, _opaque_bbox(im), 0.85, 1.0)
+        self.assertGreater(grey, dark)
+
+    def test_logo_belly_has_no_stray_third_paw(self):
+        path = orb_path()
+        im = _open_logo(path)
+        _dark, _grey, pink = _band(im, _opaque_bbox(im), 0.50, 0.70)
+        self.assertLess(pink, 8_000)
+
+    def test_logo_has_no_studio_floor_plate(self):
+        path = orb_path()
+        im = _open_logo(path)
+        bbox = _opaque_bbox(im)
+        height = bbox[3] - bbox[1]
+        y0 = bbox[1] + int(height * 0.88)
+        leftover = 0
+        for y in range(y0, bbox[3]):
+            for x in range(bbox[0], bbox[2]):
+                r, g, b, a = im.getpixel((x, y))
+                if a < 128:
+                    continue
+                if g > 50 and g > r + 20 and g > b + 20:
+                    leftover += 1
+                elif r > 40 and r < 120 and g < 40 and b > 12 and b < 70 and r > g + 20:
+                    leftover += 1
+        self.assertLess(leftover, 400)
 
     def test_logo_corners_are_transparent(self):
         path = orb_path()
@@ -106,8 +123,6 @@ class MascotIdentityTests(unittest.TestCase):
         self.assertGreaterEqual(bbox[0], PAD)
         self.assertLessEqual(bbox[2], w - PAD)
         self.assertLessEqual(bbox[3], h - PAD)
-        dark, pink, span = _hind_paw_band(im, bbox)
-        self.assertGreaterEqual(dark, PAW_DARK)
-        self.assertGreaterEqual(pink, PAW_PINK)
-        self.assertGreaterEqual(span, PAW_SPAN)
+        dark, grey, _pink = _band(im, bbox, 0.85, 1.0)
+        self.assertGreater(grey, dark)
         self.assertEqual(logo.read_bytes(), mascot.read_bytes())

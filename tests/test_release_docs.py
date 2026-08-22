@@ -29,3 +29,15 @@ class ReleaseDocsTests(unittest.TestCase):
         readme = (project_root() / "README.md").read_text(encoding="utf-8")
         self.assertIn("Нажал ё — текст уже в поле.", readme)
         self.assertIn("assets/readme-hero.png", readme)
+
+    def test_github_docs_do_not_use_the_word_daemon(self):
+        root = project_root()
+        for name in ("README.md", "CHANGELOG.md"):
+            text = (root / name).read_text(encoding="utf-8")
+            self.assertNotRegex(
+                text,
+                r"(?i)daemon",
+                f"{name} still contains daemon",
+            )
+            self.assertNotIn("демон", text)
+            self.assertNotIn("Демон", text)
