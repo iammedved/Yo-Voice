@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export YO_ROOT="$ROOT"
+PY="$ROOT/.venv/bin/python"
+if [[ ! -x "$PY" ]]; then
+  echo "Ёхо ещё не установлена. Запустите: $ROOT/scripts/install.sh" >&2
+  exit 1
+fi
+# pip-колёса CUDA должны быть видны ctranslate2
+CUDA_LIBS="$("$PY" - <<'PY'
+import os
+paths = []
+for pkg in ("nvidia.cublas.lib", "nvidia.cudnn.lib", "nvidia.cuda_nvrtc.lib", "nvidia.cuda_runtime.lib"):
+    try:
+        mod = __import__(pkg, fromlist=["*"])
+    except Exception:
+        continue
+    paths.extend(str(p) for p in getattr(mod, "__path__", []) or [])
+    file = getattr(mod, "__file__", None)
+    if file:
+        paths.append(os.path.dirname(file))
+print(os.pathsep.join(dict.fromkeys(p for p in paths if p)))
+PY
+)"
+if [[ -n "$CUDA_LIBS" ]]; then
+  export LD_LIBRARY_PATH="${CUDA_LIBS}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+exec "$PY" -m yo "$@"

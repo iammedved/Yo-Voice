@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ёхо
+Comment=Голосовой ввод в любое текстовое поле
+Exec=yo-voice toggle
+Icon=yo-voice
+Terminal=false
+Categories=Utility;AudioVideo;
+StartupNotify=false

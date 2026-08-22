@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yo-voice"
+version = "1.0.0"
+description = "Ёхо — локальный голосовой ввод в любое текстовое поле"
+requires-python = ">=3.10"
+dependencies = [
+  "faster-whisper>=1.1.1",
+  "sounddevice>=0.5.1",
+  "numpy>=1.26.4",
+  "onnxruntime>=1.16",
+]
+
+[tool.setuptools.package-data]
+yo = ["data/*.onnx"]
+
+[project.scripts]
+yo-voice = "yo.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["yo*"]
