@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Overlay and desktop icon: the cat mascot now includes complete hind paws instead of a cropped canvas
+
 ## 1.0.0 — 2026-08-22
 
 First public release of **Yo-Voice** (Ёхо).
