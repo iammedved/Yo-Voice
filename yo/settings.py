@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 log = logging.getLogger("yo.settings")
 
@@ -82,13 +83,34 @@ def _menu_gravity(widget, menu):
     return Gdk.Gravity.SOUTH, Gdk.Gravity.NORTH
 
 
-def popup_mic_menu(widget=None, event=None, on_pick=None) -> None:
+def popup_mic_menu(
+    widget=None,
+    event=None,
+    on_pick=None,
+    on_rebind=None,
+    on_rebind_translate=None,
+    listening: bool | None = None,
+) -> None:
+    if sys.platform == "win32":
+        from yo.settings_win import popup_mic_menu as _popup
+
+        _popup(
+            widget=widget,
+            event=event,
+            on_pick=on_pick,
+            on_rebind=on_rebind,
+            on_rebind_translate=on_rebind_translate,
+            listening=listening,
+        )
+        return
+
     import gi
 
     gi.require_version("Gtk", "3.0")
     gi.require_version("Gdk", "3.0")
     from gi.repository import Gtk
 
+    from yo.bind import format_bind, normalize_bind, optional_bind
     from yo.capture import list_capture_devices
     from yo.config import load_config, save_config
 
@@ -129,6 +151,34 @@ def popup_mic_menu(widget=None, event=None, on_pick=None) -> None:
             continue
         add_item(ident, str(device.get("label") or ident))
 
+    menu.append(Gtk.SeparatorMenuItem())
+    bind = normalize_bind(cfg.hotkey_kind, cfg.hotkey_keycode)
+    current = Gtk.MenuItem.new_with_label(f"Кнопка: {format_bind(bind)}")
+    current.set_sensitive(False)
+    menu.append(current)
+    assign = Gtk.MenuItem.new_with_label("Назначить кнопку")
+
+    def on_assign(_item) -> None:
+        if on_rebind is not None:
+            on_rebind()
+
+    assign.connect("activate", on_assign)
+    menu.append(assign)
+
+    trans = optional_bind(cfg.translate_hotkey_kind, cfg.translate_hotkey_keycode)
+    trans_title = f"Перевод: {format_bind(trans)}" if trans else "Перевод: не назначена"
+    trans_current = Gtk.MenuItem.new_with_label(trans_title)
+    trans_current.set_sensitive(False)
+    menu.append(trans_current)
+    assign_tr = Gtk.MenuItem.new_with_label("Назначить кнопку перевода")
+
+    def on_assign_translate(_item) -> None:
+        if on_rebind_translate is not None:
+            on_rebind_translate()
+
+    assign_tr.connect("activate", on_assign_translate)
+    menu.append(assign_tr)
+
     armed["ok"] = True
     menu.show_all()
     _LIVE_MENUS.append(menu)
@@ -158,6 +208,12 @@ def popup_mic_menu(widget=None, event=None, on_pick=None) -> None:
 
 
 def run_settings() -> None:
+    if sys.platform == "win32":
+        from yo.settings_win import run_settings as _run
+
+        _run()
+        return
+
     import gi
 
     gi.require_version("Gtk", "3.0")

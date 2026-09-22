@@ -6,7 +6,7 @@ try:
 except ImportError:
     np = None
 
-from yo.spectrum import EnergyVad, resample, rms, spectrum_bands
+from yo.spectrum import EnergyVad, resample, rms, spectrum_bands, voice_loudness, wave_amplitude
 
 
 @unittest.skipIf(np is None, "numpy не установлен")
@@ -96,3 +96,30 @@ class VadTests(unittest.TestCase):
         gap = [vad.process(0.0003, 32) for _ in range(10)]  # 320 ms
         self.assertNotIn("end", gap)
         self.assertTrue(vad.speaking)
+
+    def test_whisper_after_noisy_idle_is_detected(self):
+        vad = EnergyVad()
+        for _ in range(40):
+            vad.process(0.0004, 32)
+        events = [vad.process(0.0008, 32) for _ in range(16)]
+        self.assertIn("start", events)
+        self.assertTrue(vad.speaking)
+
+    def test_start_threshold_never_requires_a_shout(self):
+        vad = EnergyVad()
+        for _ in range(80):
+            vad.process(0.00045, 32)
+        events = [vad.process(0.0009, 32) for _ in range(16)]
+        self.assertIn("start", events)
+
+
+class OverlayLevelTests(unittest.TestCase):
+    def test_whisper_moves_waves_idle_does_not(self):
+        idle = wave_amplitude(1.5e-05)
+        whisper = wave_amplitude(0.001)
+        talk = wave_amplitude(0.008)
+        self.assertAlmostEqual(idle, 0.12, places=2)
+        self.assertGreater(whisper, idle + 0.08)
+        self.assertGreater(talk, whisper)
+        self.assertGreater(voice_loudness(0.001), 0.1)
+        self.assertLess(voice_loudness(1.5e-05), 0.02)

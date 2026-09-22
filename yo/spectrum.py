@@ -12,6 +12,15 @@ except ImportError:  # pragma: no cover
 
 N_BANDS = 12
 SAMPLE_RATE = 16000
+# Headset idle is ~1.5e-5; close whisper ~8e-4..4e-3; shout is >0.15.
+WAVE_RMS_FLOOR = 0.00012
+WAVE_RMS_FULL = 0.006
+ENERGY_START_FLOOR = 0.00035
+ENERGY_START_CAP = 0.0007
+ENERGY_START_NOISE_MULT = 2.6
+ENERGY_CONTINUE_FLOOR = 0.00028
+ENERGY_CONTINUE_NOISE_MULT = 1.8
+ENERGY_NOISE_LEARN = 0.0005
 
 
 def resample(block, src_rate: int, dst_rate: int):
@@ -37,6 +46,18 @@ def rms(block) -> float:
     return float(np.sqrt(np.mean(np.square(arr))))
 
 
+def wave_amplitude(rms_value: float) -> float:
+    """Overlay bar height: idle stays flat, whisper already moves, shout saturates."""
+    level = float(rms_value)
+    if level < WAVE_RMS_FLOOR:
+        return 0.12
+    return 0.16 + min(0.84, (level - WAVE_RMS_FLOOR) / WAVE_RMS_FULL * 0.84)
+
+
+def voice_loudness(rms_value: float) -> float:
+    return min(1.0, max(0.0, (float(rms_value) - WAVE_RMS_FLOOR) / WAVE_RMS_FULL))
+
+
 def spectrum_bands(block, n_bands: int = N_BANDS, sample_rate: int = SAMPLE_RATE) -> list[float]:
     """Логарифмические полосы 80–4000 Гц, 0..1. Это тембр, не только громкость."""
     if np is None or block is None or len(block) < 32:
@@ -58,20 +79,21 @@ def spectrum_bands(block, n_bands: int = N_BANDS, sample_rate: int = SAMPLE_RATE
 
 class EnergyVad:
     def __init__(self) -> None:
-        self.noise = 0.00035
+        self.noise = 0.00018
         self.speaking = False
         self._speech_ms = 0.0
         self._silence_ms = 0.0
         self._speech_peak = 0.0
 
     def process(self, level: float, dt_ms: float) -> str:
-        if not self.speaking:
+        # Learn the idle floor only. Quiet speech must not raise the gate.
+        if not self.speaking and level < ENERGY_NOISE_LEARN:
             self.noise = 0.97 * self.noise + 0.03 * level
-        start_thresh = max(0.0007, self.noise * 4.5)
+        start_thresh = min(ENERGY_START_CAP, max(ENERGY_START_FLOOR, self.noise * ENERGY_START_NOISE_MULT))
         if self.speaking:
             if level > start_thresh:
                 self._speech_peak = 0.85 * self._speech_peak + 0.15 * level
-            continue_thresh = max(self.noise * 2.6, 0.00032)
+            continue_thresh = max(self.noise * ENERGY_CONTINUE_NOISE_MULT, ENERGY_CONTINUE_FLOOR)
             is_speech = level > continue_thresh
         else:
             is_speech = level > start_thresh

@@ -16,9 +16,12 @@ class SettingsFocusTests(unittest.TestCase):
         self.assertTrue(flags["accept_focus"])
 
     def test_overlay_still_rejects_focus(self):
-        src = (project_root() / "yo" / "overlay.py").read_text(encoding="utf-8")
-        self.assertIn("set_accept_focus(False)", src)
-        self.assertIn("set_focus_on_map(False)", src)
+        linux = (project_root() / "yo" / "overlay_linux.py").read_text(encoding="utf-8")
+        self.assertIn("set_accept_focus(False)", linux)
+        self.assertIn("set_focus_on_map(False)", linux)
+        win = (project_root() / "yo" / "overlay_win.py").read_text(encoding="utf-8")
+        self.assertIn("WS_EX_NOACTIVATE", win)
+        self.assertIn("MA_NOACTIVATE", win)
 
     def test_menu_sits_beside_the_cat_not_at_origin(self):
         x, y = place_near_anchor(
@@ -45,6 +48,15 @@ class SettingsFocusTests(unittest.TestCase):
         body = src[start : src.index("def _reload_config")]
         self.assertNotIn('"-m", "yo", "settings"', body)
         self.assertIn("popup_mic_menu", body)
+
+    def test_existing_settings_window_is_raised_not_destroyed(self):
+        src = (project_root() / "yo" / "settings_win.py").read_text(encoding="utf-8")
+        start = src.index("def run_settings_window")
+        body = src[start : src.index("flags = window_flags")]
+        self.assertIn("winfo_exists", body)
+        self.assertIn("lift", body)
+        self.assertIn("deiconify", body)
+        self.assertNotIn("_LIVE_WIN.destroy()", body)
 
     def test_cli_has_settings_and_does_not_spawn_daemon(self):
         src = (project_root() / "yo" / "__main__.py").read_text(encoding="utf-8")

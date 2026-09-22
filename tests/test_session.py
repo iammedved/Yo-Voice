@@ -1,6 +1,6 @@
 import unittest
 
-from yo.session import DictationSession
+from yo.session import DictationSession, too_sparse_for_duration
 
 
 class DictationSessionTests(unittest.TestCase):
@@ -41,8 +41,23 @@ class DictationSessionTests(unittest.TestCase):
 
     def test_consecutive_variant_is_deduped(self):
         self.session.start()
-        text = self.session.commit_utterance("неправильные неправильное окончания")
-        self.assertIn("Неправильные окончания", text)
+        text = self.session.commit_utterance("он сказал сказала это вслух")
+        self.assertIn("сказал", text.lower())
+        self.assertNotIn("сказала", text.lower())
+
+    def test_exact_repeat_is_kept(self):
+        self.session.start()
+        text = self.session.commit_utterance("Салют! Салют! Салют!")
+        self.assertEqual(text.lower().count("салют"), 3)
+
+    def test_long_clip_with_tiny_text_is_sparse(self):
+        self.assertTrue(too_sparse_for_duration("Салют! Угу.", 59.8))
+        self.assertTrue(too_sparse_for_duration("Аа, ааа.", 21.9))
+        self.assertFalse(too_sparse_for_duration("Салют", 1.0))
+        self.assertFalse(too_sparse_for_duration("Салют!", 4.4))
+        self.assertFalse(
+            too_sparse_for_duration("я отправил длинное письмо коллеге сегодня утром", 20.0)
+        )
 
 
 if __name__ == "__main__":

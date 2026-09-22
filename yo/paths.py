@@ -3,21 +3,39 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 APP_ID = "yo-voice"
 DISPLAY_NAME = "Ёхо"
 
 
+def frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
 def project_root() -> Path:
     env = os.environ.get("YO_ROOT")
     if env:
         return Path(env)
+    # PyInstaller: _MEIPASS is the extract dir (onefile) or _internal (onedir).
+    if frozen():
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            return Path(meipass)
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
 def assets_dir() -> Path:
-    return project_root() / "assets"
+    cand = project_root() / "assets"
+    if cand.is_dir():
+        return cand
+    if frozen():
+        beside = Path(sys.executable).resolve().parent / "assets"
+        if beside.is_dir():
+            return beside
+    return cand
 
 
 def orb_path() -> Path:
@@ -29,20 +47,28 @@ def orb_path() -> Path:
 
 
 def xdg_config() -> Path:
-    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     path = base / APP_ID
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def xdg_cache() -> Path:
-    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     path = base / APP_ID
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def socket_path() -> Path:
+    if sys.platform == "win32":
+        return xdg_cache() / "yo.port"
     return xdg_cache() / "yo.sock"
 
 
@@ -52,3 +78,7 @@ def pid_path() -> Path:
 
 def config_path() -> Path:
     return xdg_config() / "config.json"
+
+
+def replacements_path() -> Path:
+    return xdg_config() / "replacements.json"

@@ -17,6 +17,8 @@ class ReleaseDocsTests(unittest.TestCase):
         self.assertIn("tilde", readme.lower())
         self.assertIn("local", readme.lower())
         self.assertIn("cloud", readme.lower())
+        self.assertIn("NLLB", readme)
+        self.assertIn("DeepL", readme)
         self.assertIn("install.sh", readme)
         self.assertIn("autostart", readme.lower())
         self.assertIn("What it cannot do", readme)

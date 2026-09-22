@@ -8,6 +8,10 @@ class PolishRuTests(unittest.TestCase):
         self.assertEqual(polish_ru("", finalize=True), "")
         self.assertEqual(polish_ru("   "), "")
 
+    def test_keeps_spoken_thanks_and_please(self):
+        self.assertEqual(polish_ru("спасибо", finalize=True), "Спасибо.")
+        self.assertEqual(polish_ru("пожалуйста", finalize=True), "Пожалуйста.")
+
     def test_statement_gets_capital_and_period(self):
         self.assertEqual(
             polish_ru("я отправил письмо", finalize=True),
@@ -66,7 +70,8 @@ class PolishRuTests(unittest.TestCase):
         ).lower()
         self.assertIn("и слушает", text)
         self.assertIn("у рта", text)
-        self.assertIn("у слов", text)
+        self.assertIn("включение услуг", text)
+        self.assertNotIn("у слов", text)
         self.assertIn("речь её", text)
         self.assertNotIn("речь быстрая", text)
         self.assertNotIn("выходится", text)
@@ -81,7 +86,8 @@ class PolishRuTests(unittest.TestCase):
         ).lower()
         self.assertIn("у монитора", text)
         self.assertNotIn("шёпотом", text)
-        self.assertIn("речь быстрая", text)
+        self.assertIn("речь сеть", text)
+        self.assertNotIn("речь быстрая", text)
         self.assertNotIn("заходится", text)
         self.assertNotIn("голос и голос", text)
 
@@ -134,7 +140,9 @@ class PolishRuTests(unittest.TestCase):
         text = polish_ru("йоха снова слушает безручного стопа", finalize=True)
         self.assertIn("Ёхо", text)
         self.assertIn("без ручного", text.lower())
-        self.assertIn("слушает", polish_ru("стоит и слушай тихий голос", finalize=True).lower())
+        heard = polish_ru("стоит и слушай тихий голос", finalize=True).lower()
+        self.assertIn("слушай", heard)
+        self.assertNotIn("слушает", heard)
 
     def test_fused_u_slov_is_split(self):
         self.assertEqual(
@@ -163,9 +171,7 @@ class PolishRuTests(unittest.TestCase):
             polish_ru("субтитры создавал DimaTorzok", finalize=True),
             "",
         )
-        self.assertEqual(polish_ru("Спасибо", finalize=True), "")
         self.assertEqual(polish_ru("ссылка в описании", finalize=True), "")
-        self.assertEqual(polish_ru("спасибо.", finalize=True), "")
 
     def test_keeps_real_sentence_with_spasibo(self):
         text = polish_ru("спасибо за письмо", finalize=True)
@@ -181,6 +187,19 @@ class PolishRuTests(unittest.TestCase):
         )
         self.assertIn("отправил", text.lower())
         self.assertNotIn("продолжение", text.lower())
+
+    def test_exact_aah_and_laugh_are_dropped(self):
+        self.assertEqual(polish_ru("Аа.", finalize=True), "")
+        self.assertEqual(polish_ru("Ха-ха!", finalize=True), "")
+        self.assertEqual(polish_ru("Ха-ха-ха.", finalize=True), "")
+        self.assertEqual(polish_ru("Аа, ааа.", finalize=True), "")
+        self.assertIn("Салют", polish_ru("Салют", finalize=True))
+        self.assertIn("Угу", polish_ru("Угу", finalize=True))
+        sentence = polish_ru("я сказал а потом ушёл", finalize=True)
+        self.assertIn("сказал", sentence.lower())
+        mixed = polish_ru("Привет. Ха-ха!", finalize=True)
+        self.assertIn("Привет", mixed)
+        self.assertNotIn("ха", mixed.lower())
 
     def test_capitalizes_after_sentence(self):
         self.assertEqual(

@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import re
 
+from yo.terms import apply_brand_terms
+
 _SPACE_RE = re.compile(r"\s+")
 _BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?…])")
 _AFTER_PUNCT_RE = re.compile(r"([,.;:!?…])([^\s\d»\"”])")
 _MULTI_PUNCT_RE = re.compile(r"([.!?]){2,}")
 _WORD_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
+_DOMAIN_RE = re.compile(
+    r"\b(?:[A-Za-z0-9-]+\.)+(?:com|org|net|io|tv|co|ai|app|dev|ru|info|me|cc)\b",
+    re.IGNORECASE,
+)
 
 QUESTION_START = {
     "кто",
@@ -57,12 +63,13 @@ HALLUCINATIONS = (
     "music",
     "[музыка]",
     "(музыка)",
+    "thanks for watching",
+    "thank you for watching",
+    "subscribe to the channel",
 )
 
 EXACT_HALLUCINATIONS = {
-    "спасибо",
     "благодарю",
-    "пожалуйста",
     "thanks",
     "thank you",
     "thankyou",
@@ -83,7 +90,6 @@ _YO_NAME = re.compile(
     re.IGNORECASE,
 )
 _BEZ_RUCHN = re.compile(r"\bбезручн([а-яё]*)", re.IGNORECASE)
-_I_SLUSHAI = re.compile(r"\bи\s+слушай\b", re.IGNORECASE)
 _USLUH = re.compile(r"\bуслух\b", re.IGNORECASE)
 _U_TORA = re.compile(r"\bу тора\b", re.IGNORECASE)
 _GROMKO_TONKO = re.compile(r"\bгромко и тонко\b", re.IGNORECASE)
@@ -108,17 +114,29 @@ _ZAVTRA_V_DA = re.compile(r"\bзавтра\s+в\s+да\b", re.IGNORECASE)
 _POLZET_SADIT = re.compile(r"\bполз[её]т\s+садится\b", re.IGNORECASE)
 _GROMKO_CHETKO = re.compile(r"\bгромко\s+четко\b", re.IGNORECASE)
 _U_SORTA = re.compile(r"\bу сорта\b", re.IGNORECASE)
-_VKL_USLUG = re.compile(r"\bвключение услуг\b", re.IGNORECASE)
 _BUKVA_YO_EE = re.compile(r"\bбукву ё\s+(?:её|ее)\b", re.IGNORECASE)
 _VYHODITSA = re.compile(r"\bнаходится\s+выходится\b", re.IGNORECASE)
 _NA_POLCHET = re.compile(r"\bна полчет\b", re.IGNORECASE)
 _VOLNA_POLCHET = re.compile(r"\bволна\s+на полчет\b", re.IGNORECASE)
 _I_SLUSHAYA = re.compile(r"\bи слушая\b", re.IGNORECASE)
 _U_SHEPOTOM = re.compile(r"\bу шёпотом\b", re.IGNORECASE)
-_RECH_SET = re.compile(r"\bречь сеть\b", re.IGNORECASE)
 _V_ZAHODITSA = re.compile(r"\bв заходится\b", re.IGNORECASE)
 _GOLOS_DUP = re.compile(r"\bголос и голос\b", re.IGNORECASE)
 _SLUSHAT_DUP = re.compile(r"\bслушать\s+тих[а-яё]*\s+и\s+слушать\b", re.IGNORECASE)
+
+
+def polish_en(text: str, *, finalize: bool = False) -> str:
+    text = _normalize_spaces(text)
+    if not text:
+        return ""
+    text = _strip_hallucinations(text)
+    if not text:
+        return ""
+    text = _fix_punct_spacing(text)
+    text = _capitalize_sentences(text, cap_first=True)
+    if finalize:
+        text = _ensure_terminal_punct_en(text)
+    return text
 
 
 def polish_ru(text: str, *, finalize: bool = False, continuation: bool = False) -> str:
@@ -129,6 +147,8 @@ def polish_ru(text: str, *, finalize: bool = False, continuation: bool = False) 
     if not text:
         return ""
     text = _fix_asr_glues(text)
+    text = apply_brand_terms(text)
+    text, domains = _hold_domains(text)
     text = _fix_punct_spacing(text)
     if continuation:
         text = _uncap_leading(text)
@@ -137,7 +157,7 @@ def polish_ru(text: str, *, finalize: bool = False, continuation: bool = False) 
         text = _capitalize_sentences(text, cap_first=True)
     if finalize:
         text = _ensure_terminal_punct(text)
-    return text
+    return _restore_held(text, domains)
 
 
 def _fix_asr_glues(text: str) -> str:
@@ -150,7 +170,6 @@ def _fix_asr_glues(text: str) -> str:
     text = _YO_NAME.sub("Ёхо", text)
     text = _YOHO_DUP.sub(r"\1", text)
     text = _BEZ_RUCHN.sub(r"без ручн\1", text)
-    text = _I_SLUSHAI.sub("и слушает", text)
     text = _GROMKO_TONKO.sub("громко и чётко", text)
     text = _ELKA_YOSH.sub("ёлка, ёж", text)
     text = _I_SADITSYA.sub("и садится", text)
@@ -172,12 +191,10 @@ def _fix_asr_glues(text: str) -> str:
     text = _POLZET_SADIT.sub("ползёт и садится", text)
     text = _GROMKO_CHETKO.sub("громко и чётко", text)
     text = _U_SHEPOTOM.sub("у монитора", text)
-    text = _RECH_SET.sub("речь быстрая", text)
     text = _V_ZAHODITSA.sub("у рта", text)
     text = _GOLOS_DUP.sub("голос", text)
     text = _SLUSHAT_DUP.sub("слушает", text)
     text = _U_SORTA.sub("у рта", text)
-    text = _VKL_USLUG.sub("у слов", text)
     text = _BUKVA_YO_EE.sub("букву ё", text)
     text = _VYHODITSA.sub("находится", text)
     text = _VOLNA_POLCHET.sub("волна ползёт", text)
@@ -190,6 +207,22 @@ def _strip_hallucinations(text: str) -> str:
     parts = re.split(r"(?<=[.!?…])\s+", text)
     kept = [part.strip() for part in parts if part.strip() and not _is_hallucination(part)]
     return " ".join(kept)
+
+
+def _hold_domains(text: str) -> tuple[str, list[str]]:
+    held: list[str] = []
+
+    def _keep(match: re.Match[str]) -> str:
+        held.append(match.group(0))
+        return f"\x00D{len(held) - 1}\x00"
+
+    return _DOMAIN_RE.sub(_keep, text), held
+
+
+def _restore_held(text: str, held: list[str]) -> str:
+    for i, chunk in enumerate(held):
+        text = text.replace(f"\x00D{i}\x00", chunk)
+    return text
 
 
 def _normalize_spaces(text: str) -> str:
@@ -226,6 +259,17 @@ def _capitalize_sentences(text: str, *, cap_first: bool = True) -> str:
         elif ch in _TERMINAL:
             cap_next = True
     return "".join(chars)
+
+
+def _ensure_terminal_punct_en(text: str) -> str:
+    stripped = text.rstrip()
+    if not stripped:
+        return stripped
+    if stripped[-1] in _TERMINAL:
+        return stripped
+    if stripped[-1] in "»\"”":
+        return stripped
+    return stripped + "."
 
 
 def _ensure_terminal_punct(text: str) -> str:
@@ -269,6 +313,14 @@ def _is_hallucination(text: str) -> bool:
     folded = text.strip().lower()
     words = _WORD_RE.findall(folded)
     joined = " ".join(words)
-    if joined in EXACT_HALLUCINATIONS:
+    if joined in EXACT_HALLUCINATIONS or _is_filler_only(joined):
         return True
     return any(token in folded for token in HALLUCINATIONS)
+
+
+def _is_filler_only(joined: str) -> bool:
+    """Целая реплика «Аа.» / «Ха-ха!» — мусор Whisper, не слово внутри фразы."""
+    compact = re.sub(r"[\s\-]+", "", joined)
+    if re.fullmatch(r"а{2,}", compact):
+        return True
+    return re.fullmatch(r"(?:ха){2,}", compact) is not None

@@ -23,7 +23,9 @@ class PhraseTests(unittest.TestCase):
         self.assertEqual(phrase_for(live=False, now=20.0, live_since=10.0), WAIT)
 
     def test_govoryu_is_not_a_phrase(self):
-        self.assertNotIn("Говорю", {WAIT, SPEAK_NOW, LISTEN})
+        from yo.phrases import TRANSLATE
+
+        self.assertNotIn("Говорю", {WAIT, SPEAK_NOW, LISTEN, TRANSLATE})
 
 
 class WaveGateTests(unittest.TestCase):

@@ -2,5 +2,10 @@ faster-whisper>=1.1.1
 sounddevice>=0.5.1
 numpy>=1.26.4
 onnxruntime>=1.16
+transformers>=4.40
+sentencepiece>=0.2
+pillow>=10.0
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
+nvidia-cuda-runtime-cu12
+nvidia-cuda-nvrtc-cu12
