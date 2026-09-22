@@ -4,6 +4,8 @@
 ; Wizard: welcome → choose install folder → tasks → progress bar → finish.
 ; Analog of Linux scripts/install.sh: Start Menu + Desktop «Ёхо», optional
 ; autostart. The checkbox has no Flags: checked, so it starts unchecked.
+; Tasks also require a model choice (download now is the default). That pair
+; is exclusive and is not in the autostart group.
 ; No administrator rights unless the chosen folder requires them
 ; (PrivilegesRequiredOverridesAllowed=dialog).
 
@@ -80,8 +82,15 @@ BeveledLabel={#MyAppNameFull}
 AutostartGroup=Автозапуск
 AutostartTask=Запускать Ёхо при входе в Windows (рекомендуется)
 LaunchNow=Запустить Ёхо сейчас
+ModelGroup=Модель распознавания
+ModelDownloadNow=Скачать модель распознавания сейчас (около 0,8 ГБ)
+ModelDownloadLater=Скачать модель после первого запуска
 
 [Tasks]
+; Own group. exclusive is only on these two, so autostart stays a normal checkbox.
+; Inno has no "checked" flag. A task without unchecked starts selected, so modelnow is the default radio.
+Name: modelnow; Description: "{cm:ModelDownloadNow}"; GroupDescription: "{cm:ModelGroup}"; Flags: exclusive
+Name: modellater; Description: "{cm:ModelDownloadLater}"; GroupDescription: "{cm:ModelGroup}"; Flags: exclusive unchecked
 Name: autostart; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:AutostartGroup}"
 
 [Files]
@@ -105,6 +114,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Yo-Voice"; ValueData: """{app}\{#MyAppExeName}"" daemon"; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
+; App window is the progress UI. Do not hide it and do not use nowait.
+Filename: "{app}\{#MyAppExeName}"; Parameters: "prefetch"; StatusMsg: "Скачивание модели распознавания"; Tasks: modelnow; Flags: waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Parameters: "daemon"; Description: "{cm:LaunchNow}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
@@ -233,4 +244,26 @@ begin
   end;
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM Yo-Voice.exe /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ChoiceDir, ChoicePath, Choice: String;
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  ChoiceDir := ExpandConstant('{localappdata}\yo-voice');
+  ChoicePath := ChoiceDir + '\prefetch.choice';
+  if not ForceDirectories(ChoiceDir) then
+  begin
+    Log('prefetch.choice directory was not created: ' + ChoiceDir);
+    Exit;
+  end;
+  if IsTaskSelected('modelnow') then
+    Choice := 'now'
+  else
+    Choice := 'later';
+  // ASCII, so the bytes are UTF-8 with no BOM. Not config.json.
+  if not SaveStringToFile(ChoicePath, Choice, False) then
+    Log('prefetch.choice was not written: ' + ChoicePath);
 end;

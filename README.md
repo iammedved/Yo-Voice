@@ -41,7 +41,7 @@ Linux reference: **Linux Mint 22.3, Cinnamon, X11**. Windows reference: **Window
 - **Journal.** Recognized phrases are written to a log on this computer. That file is removed **6 hours** after its first line. While Ёхо is running, the check is about once a minute, so the file can outlive the six hours by about a minute. If Ёхо is quit, the file stays until the next start; a start that finds a journal already six hours old deletes it before writing again. The new file appears on the next line, not as an empty placeholder at the moment of deletion. Settings and downloaded models are not part of this cleanup. There is still no WAV or recording archive.
 - **Linux paths:** config in `~/.config/yo-voice/`, log and cache in `~/.cache/yo-voice/`.
 - **Windows paths:** config in `%APPDATA%\yo-voice\`, log, cache, and models in `%LOCALAPPDATA%\yo-voice\`.
-- The only expected network use is **install time** (Python packages, or downloading the Windows installer), the **first listen**, which downloads Whisper model weights (~0.8 GB) into a local cache, and the **first use of the translate hotkey**, which downloads local NLLB weights. Those downloads are model files, not your microphone or transcripts. The speech models are not inside the Windows installer.
+- The only expected network use is **install time** (Python packages, or downloading the Windows installer), the Whisper model weights (~0.8 GB) into a local cache, and the **first use of the translate hotkey**, which downloads local NLLB weights. On Linux the speech model downloads the first time you listen. On Windows the Setup wizard asks whether to download it now or after the first launch. Those downloads are model files, not your microphone or transcripts. The speech models are not inside the Windows installer.
 
 ## Hotkey
 
@@ -140,15 +140,18 @@ Requirements: Linux with an **X11** session, Python **3.10+**, a microphone. An 
 
 ## Install on Windows
 
-Windows users do not need Python or a clone. Download **[Yo-Voice-Setup.exe](https://github.com/iammedved/Yo-Voice/releases/download/v1.0.0-windows/Yo-Voice-Setup.exe)** (64-bit, Windows 10 or 11). The file is large because the app can carry NVIDIA libraries. The ~0.8 GB speech model is a separate download the first time you listen.
+Windows users do not need Python or a clone. Download **[Yo-Voice-Setup.exe](https://github.com/iammedved/Yo-Voice/releases/download/v1.0.0-windows/Yo-Voice-Setup.exe)** (64-bit, Windows 10 or 11). The file is large because the app can carry NVIDIA libraries. The ~0.8 GB speech model is **not** inside that file.
 
 1. Double-click `Yo-Voice-Setup.exe`. A normal install does not ask for an administrator account. Picking a protected folder can.
 2. The suggested folder is `%LOCALAPPDATA%\Programs\Yo-Voice`. If Ёхо is already installed somewhere else, choose **that same folder**. The wizard does not always remember a custom folder, and accepting the suggestion creates a second copy.
-3. The task **Запускать Ёхо при входе в Windows (рекомендуется)** starts **unchecked**. Tick it if Ёхо should start when you sign in. Leaving it unchecked **removes** an existing logon entry for Ёхо.
-4. The Ready page names the mode: NVIDIA CUDA, or CPU when no NVIDIA adapter was found. Unknown adapters still get the NVIDIA libraries, with CPU fallback if there is no NVIDIA GPU.
-5. Finish. The last page can start Ёхо. Desktop and Start Menu shortcuts are named **Ёхо** and leave it in the tray.
+3. The speech-model choice is two options, and **download now** starts selected. The other option installs the model after the first launch. **Запускать Ёхо при входе в Windows (рекомендуется)** is a separate box and starts **unchecked**. Tick it if Ёхо should start when you sign in. Leaving it unchecked **removes** an existing logon entry for Ёхо.
+4. If you chose download now, the installer runs the download before it finishes. The window shows **1–100%** from bytes received, then a check that each file on disk matches the expected size. The bar does not advance on a timer. **100%** is only that finished check. A new download starts the program again so the model loads cleanly. Weights that are already complete are not downloaded again and do not start that restart. Choosing “after the first launch” skips this step; the same window appears on the first start only when the weights are still missing.
+5. The Ready page names the mode: NVIDIA CUDA, or CPU when no NVIDIA adapter was found. Unknown adapters still get the NVIDIA libraries, with CPU fallback if there is no NVIDIA GPU.
+6. Finish. The last page can start Ёхо. Desktop and Start Menu shortcuts are named **Ёхо** and leave it in the tray.
 
-Then press **ё** / **\`**, speak, and pause. The first listen downloads the model into `%LOCALAPPDATA%\yo-voice\`. Paste is Ctrl+V, or Ctrl+Shift+V in Windows Terminal. The pasted text stays on the clipboard.
+NLLB is still a separate download the first time you translate. Then press **ё** / **\`**, speak, and pause. The model cache is `%LOCALAPPDATA%\yo-voice\`. Paste is Ctrl+V, or Ctrl+Shift+V in Windows Terminal. The pasted text stays on the clipboard.
+
+If something fails, the program shows the defect once: date and time, what you were doing, an error code, and a cause when it can tell. Otherwise the report still has the code, the time, and which block it came from. One button, **Отправить разработчику**, opens a prefilled GitHub issue at `https://github.com/iammedved/Yo-Voice/issues/new`. There is no token in the program. You still press submit in the browser. If the link would be too long, the same text is also copied. The tray item is **Сообщить о сбое**. The developer sees the report when that issue is created.
 
 Uninstall from Settings → Apps → **Ёхо (Yo-Voice)**, or run `Uninstall.exe` in the install folder. That removes the program, the shortcuts, and the logon entry. It does **not** delete `%APPDATA%\yo-voice` (settings) or `%LOCALAPPDATA%\yo-voice` (models and the journal).
 

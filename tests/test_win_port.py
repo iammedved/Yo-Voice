@@ -164,6 +164,22 @@ class WindowsPortTests(unittest.TestCase):
         iss = (root / "installer" / "yo-voice.iss").read_text(encoding="utf-8")
         self.assertIn("Yo-Voice.exe", iss)
         self.assertIn('Parameters: "daemon"', iss)
+        self.assertIn('Parameters: "prefetch"', iss)
+        self.assertIn("prefetch.choice", iss)
+        iss_lines = [line.strip() for line in iss.splitlines()]
+        self.assertIn(
+            'Name: modelnow; Description: "{cm:ModelDownloadNow}"; GroupDescription: "{cm:ModelGroup}"; Flags: exclusive',
+            iss_lines,
+        )
+        self.assertIn(
+            'Name: modellater; Description: "{cm:ModelDownloadLater}"; GroupDescription: "{cm:ModelGroup}"; Flags: exclusive unchecked',
+            iss_lines,
+        )
+        self.assertIn(
+            'Name: autostart; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:AutostartGroup}"',
+            iss,
+        )
+        self.assertIn("Сообщить о сбое", tray)
         settings = (root / "yo" / "settings_win.py").read_text(encoding="utf-8")
         self.assertNotIn(".tk_popup(", settings)
         overlay = (root / "yo" / "overlay_win.py").read_text(encoding="utf-8")

@@ -68,6 +68,16 @@ def _report_fatal(exc: BaseException) -> None:
     tb = traceback.format_exc()
     _append_crash(tb)
     log_file = _crash_log_path()
+    try:
+        from datetime import datetime
+
+        from yo.report import build_report
+        from yo.report_ui import show_report
+
+        show_report(build_report("запуск программы", exc, block="startup", now=datetime.now()))
+        return
+    except Exception:
+        _append_crash(traceback.format_exc())
     _message_box(f"Ёхо не запустилась:\n{exc}\n\nЖурнал: {log_file}")
 
 
@@ -112,7 +122,19 @@ def _run(argv: list[str] | None = None) -> int:
         "command",
         nargs="?",
         default=default_command(),
-        choices=("toggle", "start", "stop", "daemon", "demo", "status", "quit", "settings", "bind", "reload"),
+        choices=(
+            "toggle",
+            "start",
+            "stop",
+            "daemon",
+            "demo",
+            "status",
+            "quit",
+            "settings",
+            "bind",
+            "reload",
+            "prefetch",
+        ),
     )
     parser.add_argument(
         "bind_spec",
@@ -122,6 +144,11 @@ def _run(argv: list[str] | None = None) -> int:
     parser.add_argument("--seconds", type=float, default=8.0, help="длительность демо overlay")
     args = parser.parse_args(argv)
 
+    if args.command == "prefetch":
+        from yo.prefetch_ui import run_prefetch_window
+
+        code, _already = run_prefetch_window()
+        return code
     if args.command == "daemon":
         from yo.app import run_daemon
 
@@ -251,7 +278,7 @@ def _venv_python(root: Path) -> Path:
     return Path(sys.executable)
 
 
-def _spawn_daemon() -> bool:
+def _spawn_daemon(attempts: int = 40) -> bool:
     frozen = bool(getattr(sys, "frozen", False))
     from yo.paths import project_root, xdg_cache
 
@@ -287,7 +314,7 @@ def _spawn_daemon() -> bool:
         popen_kw["stdout"] = fh
         popen_kw["stderr"] = fh
         subprocess.Popen(argv, **popen_kw)
-    for _ in range(40):
+    for _ in range(max(1, int(attempts))):
         time.sleep(0.15)
         from yo.ipc import daemon_alive
 

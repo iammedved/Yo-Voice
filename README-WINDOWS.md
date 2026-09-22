@@ -13,10 +13,13 @@ Most people should install **[Yo-Voice-Setup.exe](https://github.com/iammedved/Y
 1. Double-click the Setup file.
 2. Suggested folder: `%LOCALAPPDATA%\Programs\Yo-Voice`. If Ёхо is already installed in another folder, choose that same folder. Accepting the suggestion otherwise creates a second copy. The wizard does not always remember a custom folder.
 3. **Запускать Ёхо при входе в Windows (рекомендуется)** starts **unchecked**. Tick it to start at sign-in. Leaving it unchecked removes an existing logon entry for Ёхо.
-4. On the Ready page, read the mode. NVIDIA adapters use CUDA and the NVIDIA libraries are unpacked. If the adapters were read and none is NVIDIA, those libraries are not unpacked and recognition stays on the CPU (`int8`, at most 8 threads). An AMD or Intel graphics chip is not used. If the adapter list could not be read, the libraries are unpacked and recognition still falls back to the CPU when there is no NVIDIA GPU. The page does not write settings and does not force CPU on an NVIDIA PC.
-5. Finish. You can start Ёхо from the last page. Shortcuts leave it in the tray.
+4. The speech-model page offers two choices. **Download now** starts selected and downloads `coriollon/whisper-large-v3-turbo-russian` (~0.8 GB) before the wizard finishes. **After the first launch** skips that step. The progress window counts real bytes, then checks file sizes on disk. It is not a timer. **100%** means that check passed. A new download starts the program again so the model loads cleanly. Weights that are already complete are left in place and do not restart in a loop. The same window is used if you chose later and the weights are still missing at the first start.
+5. On the Ready page, read the mode. NVIDIA adapters use CUDA and the NVIDIA libraries are unpacked. If the adapters were read and none is NVIDIA, those libraries are not unpacked and recognition stays on the CPU (`int8`, at most 8 threads). An AMD or Intel graphics chip is not used. If the adapter list could not be read, the libraries are unpacked and recognition still falls back to the CPU when there is no NVIDIA GPU. The page does not write settings and does not force CPU on an NVIDIA PC.
+6. Finish. You can start Ёхо from the last page. Shortcuts leave it in the tray.
 
-The Setup file is large because it can carry NVIDIA libraries. Whisper (~0.8 GB) and NLLB are **not** inside it. They download on first listen and first translate into `%LOCALAPPDATA%\yo-voice\`.
+The Setup file is large because it can carry NVIDIA libraries. Whisper (~0.8 GB) and NLLB are **not** inside it. Whisper is the choice above. NLLB still downloads on the first translate, into `%LOCALAPPDATA%\yo-voice\`.
+
+A failure dialog has the date and time, what was being done, an error code, and a cause when the program can tell. Otherwise it still names the code, the time, and the block. **Отправить разработчику** opens a prefilled issue at `https://github.com/iammedved/Yo-Voice/issues/new`. The program does not contain a token, and you still submit the issue in the browser. A link that would be too long is also copied to the clipboard. The tray item **Сообщить о сбое** opens the same report. The developer sees it when the issue exists.
 
 Running Setup again stops a running copy, then updates the folder you selected.
 
@@ -46,7 +49,7 @@ Right-click the cat → **Назначить кнопку** to rebind the toggle
 
 1. Start Ёхо from the shortcut, or tick logon start and sign in again.
 2. Press **ё**. The cat shows **Жду**, then **Можно говорить**, then **Слушаю**.
-3. The first listen downloads `coriollon/whisper-large-v3-turbo-russian`.
+3. If the speech model was not downloaded during Setup and is not already on disk, the first start shows the same 1–100% window, then starts the program again after a new download.
 4. Speak and pause. Text is pasted into the focused field.
 
 ## Recognition

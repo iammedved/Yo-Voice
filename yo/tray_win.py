@@ -17,10 +17,12 @@ log = logging.getLogger("yo.tray")
 TIP = "Ёхо"
 ITEM_SETTINGS = "Настройки"
 ITEM_LOG = "Открыть журнал"
+ITEM_REPORT = "Сообщить о сбое"
 ITEM_QUIT = "Выход"
 
 ID_SETTINGS = 1001
 ID_LOG = 1002
+ID_REPORT = 1004
 ID_QUIT = 1003
 
 NIM_ADD = 0
@@ -182,11 +184,13 @@ class TrayIcon:
         on_open_log: Callable[[], object] | None = None,
         on_quit: Callable[[], object] | None = None,
         on_toggle: Callable[[], object] | None = None,
+        on_report: Callable[[], object] | None = None,
     ) -> None:
         self.on_settings = on_settings
         self.on_open_log = on_open_log
         self.on_quit = on_quit
         self.on_toggle = on_toggle
+        self.on_report = on_report
         self._hwnd = None
         self._icon = None
         self._icon_owned = False
@@ -380,6 +384,7 @@ class TrayIcon:
         try:
             user32.AppendMenuW(menu, MF_STRING, ID_SETTINGS, ITEM_SETTINGS)
             user32.AppendMenuW(menu, MF_STRING, ID_LOG, ITEM_LOG)
+            user32.AppendMenuW(menu, MF_STRING, ID_REPORT, ITEM_REPORT)
             user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
             user32.AppendMenuW(menu, MF_STRING, ID_QUIT, ITEM_QUIT)
             x, y = cursor_pos()
@@ -401,6 +406,7 @@ class TrayIcon:
         action = {
             ID_SETTINGS: self.on_settings,
             ID_LOG: self.on_open_log,
+            ID_REPORT: self.on_report,
             ID_QUIT: self.on_quit,
         }.get(cmd)
         if action is None:

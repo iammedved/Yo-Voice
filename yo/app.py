@@ -97,6 +97,8 @@ class YoApp:
         self._last_good_paste = 0
         self._jobs: queue.Queue = queue.Queue()
         self._tray = None
+        self._last_report = None
+        self._shown_defects: set[tuple[str, str, str]] = set()
         self._worker = threading.Thread(target=self._job_loop, daemon=True, name="yo-asr")
         self._worker.start()
 
@@ -131,8 +133,9 @@ class YoApp:
     def _preload_models(self) -> None:
         try:
             self.engine.load()
-        except Exception:
+        except Exception as exc:
             log.warning("модель ASR не загрузилась (будет повтор при записи)", exc_info=True)
+            self._show_defect("загрузка модели распознавания", exc, "model")
 
     def toggle(self) -> bool:
         return self._press("transcribe")
@@ -259,6 +262,7 @@ class YoApp:
             self.engine.load(lambda msg: idle_add(self.overlay.set_status, msg))
         except Exception as exc:
             idle_add(self._load_failed, str(exc))
+            self._show_defect("загрузка модели распознавания", exc, "model")
             return
         if self.session.listening and not self.overlay.live:
             idle_add(self._go_live)
@@ -279,6 +283,7 @@ class YoApp:
                 tray.show_message(hint)
             except Exception:
                 log.exception("не удалось показать уведомление")
+        self._show_defect(f"микрофон: {hint}", block="microphone")
 
     def _go_live(self) -> bool:
         if not self.session.listening:
@@ -438,6 +443,7 @@ class YoApp:
         if hk is None or not hk.error:
             return False
         log.error("горячая клавиша: %s", hk.error)
+        self._show_defect(f"горячая клавиша: {hk.error}", block="hotkey")
         if not self.session.listening:
             self.overlay.set_hint(HOTKEY_BUSY_HINT)
             self.overlay.show_listening(HOTKEY_BUSY_HINT)
@@ -474,6 +480,10 @@ class YoApp:
                         log.info("перевод utt=%s: %s", utt, raw)
         except Exception as exc:
             log.exception("ошибка распознавания")
+            if task == "translate":
+                self._show_defect("перевод фразы на английский", exc, "translate")
+            else:
+                self._show_defect("распознавание фразы", exc, "asr")
             idle_add(self._finalize_failed, str(exc), hide_after, token)
             return
         idle_add(self._commit_raw, raw, hide_after, token, utt, task, speech_seconds)
@@ -654,7 +664,7 @@ class YoApp:
         try:
             clipboard_set(text)
             self._paste_fail = 0
-        except Exception:
+        except Exception as exc:
             log.exception("не удалось записать текст в буфер обмена")
             self._paste_fail += 1
             if self._paste_fail < 3:
@@ -665,6 +675,7 @@ class YoApp:
             else:
                 self._paste_armed = False
                 self._paste_fail = 0
+                self._show_defect("вставка текста в активное поле", exc, "paste")
             return False
         log.info("в буфер %s символов", len(text))
         self._pending_pastes += 1
@@ -749,8 +760,9 @@ class YoApp:
             )
         except TypeError:
             self.injector.paste()
-        except Exception:
+        except Exception as exc:
             log.exception("ошибка вставки")
+            self._show_defect("вставка текста в активное поле", exc, "paste")
         finally:
             self._pending_pastes = max(0, self._pending_pastes - 1)
             if parked and self.session.listening:
@@ -832,6 +844,7 @@ class YoApp:
                 on_open_log=lambda: idle_add(self._open_log),
                 on_quit=lambda: idle_add(self.quit),
                 on_toggle=lambda: idle_add(self.toggle),
+                on_report=lambda: idle_add(self._open_report),
             )
             show_intro = not bool(getattr(self.config, "tray_intro_shown", False))
             self._tray.start(balloon=show_intro)
@@ -1041,6 +1054,56 @@ class YoApp:
             return "bye"
         return "unknown"
 
+    def _show_defect(self, action: str, exc: BaseException | None = None, block: str | None = None) -> bool:
+        if threading.current_thread() is not threading.main_thread():
+            idle_add(self._show_defect, action, exc, block)
+            return False
+        try:
+            from datetime import datetime
+
+            from yo.report import build_report
+
+            report = build_report(action, exc, block=block, now=datetime.now())
+        except Exception:
+            log.exception("не удалось собрать отчёт")
+            return False
+        self._last_report = report
+        key = (report.code, report.what, report.detail)
+        if key in self._shown_defects:
+            return False
+        self._shown_defects.add(key)
+        try:
+            from yo.report_ui import show_report
+
+            show_report(report)
+        except Exception:
+            log.exception("не удалось показать отчёт")
+        return False
+
+    def _open_report(self) -> bool:
+        report = self._last_report
+        if report is None:
+            try:
+                from datetime import datetime
+
+                from yo.report import build_report
+
+                report = build_report(
+                    "открыли отчёт из меню, текущей ошибки нет",
+                    block="unknown",
+                    now=datetime.now(),
+                )
+            except Exception:
+                log.exception("не удалось собрать отчёт")
+                return False
+        try:
+            from yo.report_ui import show_report
+
+            show_report(report)
+        except Exception:
+            log.exception("не удалось показать отчёт")
+        return False
+
 
 def run_daemon() -> None:
     try:
@@ -1059,6 +1122,20 @@ def run_daemon() -> None:
             if dropped:
                 log.info("Ёхо перезапущена без прав администратора — так вставка в другие окна работает")
                 return
+            if os.environ.get("YO_PREFETCH_RESTARTED") != "1":
+                from yo.fetchprog import weights_ready
+
+                if not weights_ready():
+                    from yo.prefetch_ui import run_prefetch_window
+
+                    code, already = run_prefetch_window()
+                    if code == 0 and not already:
+                        os.environ["YO_PREFETCH_RESTARTED"] = "1"
+                        from yo.__main__ import _spawn_daemon
+
+                        if _spawn_daemon(attempts=160):
+                            return
+                        log.error("модель скачана, но новый запуск не поднялся — остаюсь в этом процессе")
             log.info("целостность rid=%s high=%s", token_integrity_rid(), is_high_integrity())
             if daemon_alive():
                 log.info("Ёхо уже запущена")
