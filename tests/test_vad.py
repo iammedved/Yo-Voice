@@ -186,6 +186,15 @@ class TrimToSpeechTests(unittest.TestCase):
         self.assertGreater(len(kept), len(speech) * 2)
         self.assertLess(len(kept), len(speech) * 2 + 16000)
 
+    def test_internal_pause_is_not_filled_by_pad(self):
+        speech = _sine(8 * FRAME / 16000, amp=0.2)
+        pause = np.zeros(16 * FRAME, dtype=np.float32)
+        clip = np.concatenate([speech, pause, speech])
+        kept = trim_to_speech(clip, 16000, backend="energy")
+        self.assertIsNotNone(kept)
+        self.assertGreater(len(kept), 2 * len(speech))
+        self.assertLess(len(kept), 2 * len(speech) + int(16000 * 0.35))
+
     def test_minute_between_clicks_is_not_sent(self):
         click = np.full(FRAME, 0.05, dtype=np.float32)
         minute = np.zeros((16000 * 30 // FRAME) * FRAME, dtype=np.float32)

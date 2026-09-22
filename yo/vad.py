@@ -344,9 +344,11 @@ def trim_to_speech(
         return None
     pad_frames = max(0, int(round(pad_ms / (1000.0 * FRAME / float(sample_rate)))))
     keep = [False] * len(mask)
-    for start_i, end_i in islands:
-        lo = max(0, start_i - pad_frames)
-        hi = min(len(mask), end_i + pad_frames)
+    # Pad only the outer edges so an internal pause is not sent back to ASR.
+    last = len(islands) - 1
+    for index, (start_i, end_i) in enumerate(islands):
+        lo = max(0, start_i - pad_frames) if index == 0 else start_i
+        hi = min(len(mask), end_i + pad_frames) if index == last else end_i
         for k in range(lo, hi):
             keep[k] = True
     pieces: list[np.ndarray] = []

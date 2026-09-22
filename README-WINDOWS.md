@@ -33,6 +33,8 @@ Running Setup again stops a running copy, then updates the folder you selected.
 | Models, cache, journal | `%LOCALAPPDATA%\yo-voice\` |
 | Program | the folder you chose, by default `%LOCALAPPDATA%\Programs\Yo-Voice\Yo-Voice.exe` |
 
+If `config.json` cannot be read, Ёхо does not replace it with defaults. Defaults are used only in memory. A missing settings file is still created. A finished save writes a temporary file in the same folder and replaces `config.json` only after that write completes.
+
 The journal holds recognized lines and is deleted **6 hours** after its first line. While Ёхо is open the check runs about once a minute. After you quit, the file stays until the next start, and a start that finds it already six hours old deletes it before writing. The next line creates the new file. Settings, models, and the port file are not deleted with it. There is no WAV archive.
 
 On Windows the pasted text **stays on the clipboard**. Linux dictation puts the previous clipboard back; Windows does not. Translate on both leaves the English text on the clipboard.
@@ -55,6 +57,8 @@ Right-click the cat → **Назначить кнопку** to rebind the toggle
 ## Recognition
 
 NVIDIA CUDA when a NVIDIA GPU is present (`int8_float16` for the Russian model). Otherwise CPU `int8`. No ROCm, DirectML, or Vulkan path. A machine without NVIDIA does not need an NVIDIA driver and will feel slower after each phrase.
+
+A pause inside one phrase is not sent back to recognition. The short margin stays only before the first speech and after the last. Cleanup still fixes known mishearings, but «и слушая», «у тора», «у сорта», and «громко и тонко» stay as spoken. «громко четко» still becomes «громко и чётко».
 
 ## Install from source
 

@@ -68,7 +68,9 @@ class PolishRuTests(unittest.TestCase):
             "через букву ё ее находится выходится у рта волна на полчет",
             finalize=True,
         ).lower()
-        self.assertIn("и слушает", text)
+        self.assertIn("и слушая", text)
+        self.assertNotIn("и слушает", text)
+        self.assertIn("у сорта", text)
         self.assertIn("у рта", text)
         self.assertIn("включение услуг", text)
         self.assertNotIn("у слов", text)
@@ -125,8 +127,14 @@ class PolishRuTests(unittest.TestCase):
 
     def test_calibration_glues_from_58(self):
         self.assertIn("у слов", polish_ru("нельзя услух проглатывать", finalize=True).lower())
-        self.assertIn("монитора", polish_ru("стоит у тора", finalize=True).lower())
-        self.assertIn("чётко", polish_ru("говорю громко и тонко", finalize=True).lower())
+        tora = polish_ru("стоит у тора", finalize=True).lower()
+        self.assertIn("у тора", tora)
+        self.assertNotIn("монитора", tora)
+        tonko = polish_ru("говорю громко и тонко", finalize=True).lower()
+        self.assertIn("тонко", tonko)
+        self.assertNotIn("чётко", tonko)
+        self.assertIn("громко и чётко", polish_ru("говорю громко четко", finalize=True).lower())
+        self.assertIn("стоит у монитора", polish_ru("кот стоит монитора", finalize=True).lower())
         self.assertIn("ёж", polish_ru("ёлка, ёш и ещё", finalize=True).lower())
         self.assertIn("садится", polish_ru("ползёт и садиться", finalize=True).lower())
         allowed = polish_ru("это допустимо в начале", finalize=True).lower()

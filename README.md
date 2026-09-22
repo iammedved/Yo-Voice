@@ -12,7 +12,7 @@ It is not a cloud product. Microphone audio and transcripts stay on the computer
 
 - Types what you say into the **currently focused** text field (browser, editor, chat, terminal).
 - Runs **on your machine**. Speech is recognized locally with `faster-whisper` (`coriollon/whisper-large-v3-turbo-russian`). Nothing is uploaded to a speech API.
-- Speaks **Russian**. Punctuation and capitalization are cleaned up after recognition. A second hotkey (unset until you assign it) recognizes that Russian speech locally, then translates the Russian transcript to **English** with a local **NLLB** model and pastes the English into the focused field.
+- Speaks **Russian**. Punctuation and capitalization are cleaned up after recognition. Real phrases such as «и слушая», «у тора», «у сорта», and «громко и тонко» are left as spoken. «громко четко» still becomes «громко и чётко». A second hotkey (unset until you assign it) recognizes that Russian speech locally, then translates the Russian transcript to **English** with a local **NLLB** model and pastes the English into the focused field.
 - Shows a small **cat overlay** while listening: **Жду** (waiting / loading), **Можно говорить** (about one second after the mic is live), then **Слушаю** (listening). The waveform moves only while the microphone is actually capturing.
 - Lets you pick the microphone by **right-clicking the cat**, and rebind the listen toggle to any keyboard key or mouse button from that same menu. One button starts and stops listening.
 - Can start at login. On Linux, `scripts/install.sh` turns that on. On Windows, the Setup wizard leaves the box **unchecked** until you tick it.
@@ -40,7 +40,7 @@ Linux reference: **Linux Mint 22.3, Cinnamon, X11**. Windows reference: **Window
 - **Clipboard.** On Linux, dictation pastes through the clipboard and then restores what was there before. Translate pastes the English and **leaves that English on the clipboard**. On Windows, the pasted text **stays** on the clipboard (dictation and translate), so a manual paste still works if the keystroke could not be delivered.
 - **Journal.** Recognized phrases are written to a log on this computer. That file is removed **6 hours** after its first line. While Ёхо is running, the check is about once a minute, so the file can outlive the six hours by about a minute. If Ёхо is quit, the file stays until the next start; a start that finds a journal already six hours old deletes it before writing again. The new file appears on the next line, not as an empty placeholder at the moment of deletion. Settings and downloaded models are not part of this cleanup. There is still no WAV or recording archive.
 - **Linux paths:** config in `~/.config/yo-voice/`, log and cache in `~/.cache/yo-voice/`.
-- **Windows paths:** config in `%APPDATA%\yo-voice\`, log, cache, and models in `%LOCALAPPDATA%\yo-voice\`.
+- **Windows paths:** config in `%APPDATA%\yo-voice\`, log, cache, and models in `%LOCALAPPDATA%\yo-voice\`. A settings file that cannot be read is left as it is. Ёхо uses defaults only in memory until that file can be read again. A missing settings file is still created. A finished save replaces the file only after the new copy is fully written.
 - The only expected network use is **install time** (Python packages, or downloading the Windows installer), the Whisper model weights (~0.8 GB) into a local cache, and the **first use of the translate hotkey**, which downloads local NLLB weights. On Linux the speech model downloads the first time you listen. On Windows the Setup wizard asks whether to download it now or after the first launch. Those downloads are model files, not your microphone or transcripts. The speech models are not inside the Windows installer.
 
 ## Hotkey
@@ -163,7 +163,7 @@ From a source checkout, Python **3.12** and `scripts/install.ps1` are the other 
 
 1. Hotkey (or the launcher) tells this program to listen.
 2. Overlay appears without stealing keyboard focus, so the caret stays in your app.
-3. Silero VAD keeps silence out of Whisper; only speech is transcribed.
+3. Silero VAD keeps silence out of Whisper; only speech is transcribed. A short margin stays before the first speech and after the last. A pause in the middle of the phrase is not pulled back in.
 4. On a pause, the utterance is recognized locally and pasted (Ctrl+V; Ctrl+Shift+V in a terminal).
 5. Press the hotkey again to flush the last bit and hide the cat.
 
