@@ -164,7 +164,11 @@ def run_settings_window(
     combo.bind("<<ComboboxSelected>>", on_changed)
 
     ttk.Separator(frame).pack(fill="x", pady=(0, 10))
-    ttk.Label(frame, text="Клавиша диктовки (нажать — говорить, нажать ещё раз — вставить)").pack(anchor="w")
+    ttk.Label(
+        frame,
+        text="Клавиша диктовки (нажать — говорить, нажать ещё раз — вставить)",
+        wraplength=370,
+    ).pack(anchor="w")
     bind = normalize_bind(cfg.hotkey_kind, cfg.hotkey_keycode)
     bind_var = tk.StringVar(value=format_bind(bind))
     row = ttk.Frame(frame)
@@ -327,7 +331,7 @@ def run_settings_window(
     armed["ok"] = True
 
     def place() -> None:
-        w, h = 400, 340
+        w, h = 400, 360
         if event is not None and getattr(event, "x_root", None) is not None:
             x, y = int(event.x_root), int(event.y_root)
         elif cfg.overlay_x is not None and cfg.overlay_y is not None:
