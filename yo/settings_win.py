@@ -164,7 +164,11 @@ def run_settings_window(
     combo.bind("<<ComboboxSelected>>", on_changed)
 
     ttk.Separator(frame).pack(fill="x", pady=(0, 10))
-    ttk.Label(frame, text="Клавиша диктовки (нажать — говорить, нажать ещё раз — вставить)").pack(anchor="w")
+    ttk.Label(
+        frame,
+        text="Клавиша диктовки (нажать — говорить, нажать ещё раз — вставить)",
+        wraplength=370,
+    ).pack(anchor="w")
     bind = normalize_bind(cfg.hotkey_kind, cfg.hotkey_keycode)
     bind_var = tk.StringVar(value=format_bind(bind))
     row = ttk.Frame(frame)
@@ -269,10 +273,65 @@ def run_settings_window(
         foreground="#555",
     ).pack(anchor="w", pady=(4, 0))
 
+    ttk.Separator(frame).pack(fill="x", pady=(10, 10))
+    from yo.speaker import has_voiceprint
+
+    voice_on = tk.BooleanVar(value=bool(cfg.speaker_filter))
+    voice_var = tk.StringVar()
+
+    def _voice_label() -> None:
+        if not has_voiceprint():
+            voice_var.set("Образец голоса не записан — без него слушаю всех.")
+        elif voice_on.get():
+            voice_var.set("Слушаю только ваш голос, чужие голоса отрезаю.")
+        else:
+            voice_var.set("Образец записан, фильтр выключен.")
+
+    def _save_voice_on(value: bool) -> None:
+        current = load_config()
+        current.speaker_filter = bool(value)
+        save_config(current)
+        if daemon_alive():
+            try:
+                send_command("reload")
+            except OSError:
+                log.warning("демон Ёхо не принял reload")
+
+    def _toggle_voice() -> None:
+        _save_voice_on(voice_on.get())
+        _voice_label()
+
+    def _enrolled(ok: bool) -> None:
+        if ok:
+            _save_voice_on(True)
+        try:  # the settings window may already be closed
+            if ok:
+                voice_on.set(True)
+            _voice_label()
+        except Exception:
+            pass
+
+    def _do_enroll() -> None:
+        from yo.enroll_ui import open_enroll_window
+
+        open_enroll_window(win, microphone=load_config().microphone or "", on_done=_enrolled)
+
+    ttk.Checkbutton(
+        frame,
+        text="Слушать только мой голос",
+        variable=voice_on,
+        command=_toggle_voice,
+    ).pack(anchor="w")
+    row3 = ttk.Frame(frame)
+    row3.pack(fill="x", pady=(4, 0))
+    ttk.Label(row3, textvariable=voice_var, wraplength=230, foreground="#555").pack(side="left")
+    ttk.Button(row3, text="Записать мой голос", command=_do_enroll).pack(side="right")
+    _voice_label()
+
     armed["ok"] = True
 
     def place() -> None:
-        w, h = 400, 250
+        w, h = 400, 360
         if event is not None and getattr(event, "x_root", None) is not None:
             x, y = int(event.x_root), int(event.y_root)
         elif cfg.overlay_x is not None and cfg.overlay_y is not None:
