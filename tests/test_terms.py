@@ -8,7 +8,7 @@ from unittest import mock
 
 from yo.asr import TRANSCRIBE_OPTIONS
 from yo.polish import polish_ru
-from yo.terms import asr_hotwords, load_rules
+from yo.terms import apply_brand_terms, asr_hotwords, load_rules
 
 
 def _final(text: str) -> str:
@@ -220,6 +220,15 @@ class BrandTermsTests(unittest.TestCase):
         text = _final("поставь икс в конце")
         self.assertNotIn("x.com", text.lower())
         self.assertNotRegex(text, r"\bX\b")
+
+
+class UserRuleTextIsLiteralTests(unittest.TestCase):
+    def test_backslashes_in_replacement_do_not_crash(self):
+        rules = (("папку юзерс", "C:\\Users"), ("группа", "\\1 group"))
+        self.assertEqual(
+            apply_brand_terms("открой папку юзерс, группа", rules=rules),
+            "открой C:\\Users, \\1 group",
+        )
 
 
 if __name__ == "__main__":

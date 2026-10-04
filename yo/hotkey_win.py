@@ -15,6 +15,7 @@ from collections.abc import Callable
 from ctypes import wintypes
 
 from yo.bind import OVERLAY_UI_BUTTONS, ToggleBind, accept_capture_event, normalize_bind
+from yo.keyrepeat import win_key_action
 from yo.winapi import hwnd_int
 
 log = logging.getLogger("yo.hotkey")
@@ -385,21 +386,26 @@ class HotkeyWatcher(threading.Thread):
                 vk = int(info.vkCode)
                 if vk in MODIFIER_VKS:
                     return int(user32.CallNextHookEx(self._khook, ncode, wparam, lparam))
-                if _mods_down():
-                    return int(user32.CallNextHookEx(self._khook, ncode, wparam, lparam))
-                cb = self._handler_for_key(vk)
-                if cb is not None:
-                    message = int(wparam)
-                    if message in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                        if vk in self._keys_down:
-                            return 1
-                        self._keys_down.add(vk)
-                        if self._tid:
-                            user32.PostThreadMessageW(self._tid, WM_YO_KEY, vk, 0)
-                    elif message in (WM_KEYUP, WM_SYSKEYUP):
-                        self._keys_down.discard(vk)
-                    if message in (WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP):
-                        return 1
+                message = int(wparam)
+                down = message in (WM_KEYDOWN, WM_SYSKEYDOWN)
+                up = message in (WM_KEYUP, WM_SYSKEYUP)
+                bound = self._handler_for_key(vk) is not None
+                held = vk in self._keys_down
+                action = win_key_action(
+                    down=down,
+                    up=up,
+                    bound=bound,
+                    held=held,
+                    mods_down=bool(bound and down and not held and _mods_down()),
+                )
+                if up:
+                    self._keys_down.discard(vk)
+                if action == "fire":
+                    self._keys_down.add(vk)
+                    if self._tid:
+                        user32.PostThreadMessageW(self._tid, WM_YO_KEY, vk, 0)
+                if action != "pass":
+                    return 1
         except Exception:
             log.exception("ошибка keyboard hook")
         return int(user32.CallNextHookEx(self._khook, ncode, wparam, lparam))

@@ -240,7 +240,8 @@ def apply_brand_terms(text: str, rules: tuple[tuple[str, str], ...] | None = Non
     text = _LEGAL_KODEKS.sub(_hold, text)
     text = _rewrite_spoken_models(text)
     for heard, write in rules if rules is not None else load_rules():
-        text = re.sub(_heard_pattern(heard), write, text, flags=re.IGNORECASE)
+        # A function, not a template: C:\Users or \1 in a user rule stays literal text.
+        text = re.sub(_heard_pattern(heard), lambda _m, w=write: w, text, flags=re.IGNORECASE)
     for i, chunk in enumerate(saved):
         text = text.replace(f"\x00K{i}\x00", chunk)
     return text

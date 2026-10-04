@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 class WindowsPortTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows API")
     def test_facades_do_not_import_x11_or_gtk(self):
         for name in list(sys.modules):
             if name == "gi" or name.startswith("gi.") or name == "Xlib" or name.startswith("Xlib."):
@@ -25,6 +26,7 @@ class WindowsPortTests(unittest.TestCase):
             self.assertTrue(yo.inject.Injector.__module__.endswith("inject_win"))
             self.assertTrue(yo.ipc.IpcServer.__module__.endswith("ipc_win"))
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows API")
     def test_grave_keycode_maps_to_vk_oem_3(self):
         from yo.hotkey_win import VK_OEM_3, vk_from_code, vk_label
 
@@ -66,6 +68,7 @@ class WindowsPortTests(unittest.TestCase):
             self.assertTrue(restore_clipboard_after_paste(task="transcribe"))
             self.assertFalse(restore_clipboard_after_paste(task="translate"))
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows API")
     def test_inject_detects_windows_terminal_preview(self):
         from yo.inject_win import TERMINAL_CLASSES, TERMINAL_EXES, TERMINAL_HINTS
 
@@ -111,6 +114,7 @@ class WindowsPortTests(unittest.TestCase):
             server.stop()
             server.join(timeout=2.0)
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows API")
     def test_autostart_command_is_user_level_pythonw(self):
         from yo.autostart_win import VALUE_NAME, command
 
@@ -209,6 +213,7 @@ class WindowsPortTests(unittest.TestCase):
         self.assertIn(".lift()", settings)
         self.assertNotIn("_LIVE_WIN.destroy()", settings)
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows API")
     def test_overlay_exports_layout_constants(self):
         from yo.overlay import HEIGHT, WIDTH
         from yo.overlay_win import MA_NOACTIVATE, WS_EX_NOACTIVATE

@@ -35,6 +35,90 @@ def resample(block, src_rate: int, dst_rate: int):
     return np.interp(new_x, old_x, arr).astype(np.float32)
 
 
+class DcBlocker:
+    """Remove the mic's DC offset without a step at every block edge.
+
+    Subtracting each block's own mean adds a square wave at the block rate
+    (100 Hz for 10 ms WASAPI blocks), right where a low voice sits. Here the
+    offset is tracked slowly and ramped across the block, so the output is
+    continuous.
+    """
+
+    def __init__(self, sample_rate: int = SAMPLE_RATE, time_constant_s: float = 0.25) -> None:
+        self.sample_rate = int(sample_rate)
+        self.time_constant_s = float(time_constant_s)
+        self._dc: float | None = None
+
+    def process(self, block):
+        arr = np.asarray(block, dtype=np.float32)
+        n = len(arr)
+        if n == 0:
+            return arr
+        mean = float(np.mean(arr))
+        if self._dc is None:
+            self._dc = mean
+            return (arr - np.float32(mean)).astype(np.float32)
+        alpha = math.exp(-n / max(1.0, self.sample_rate * self.time_constant_s))
+        start = self._dc
+        end = alpha * start + (1.0 - alpha) * mean
+        self._dc = end
+        ramp = np.linspace(start, end, num=n, endpoint=False, dtype=np.float32)
+        return (arr - ramp).astype(np.float32)
+
+
+def _lowpass_taps(cutoff: float, taps: int):
+    """Windowed-sinc low-pass; cutoff in cycles per input sample (< 0.5)."""
+    n = np.arange(taps, dtype=np.float64) - (taps - 1) / 2.0
+    h = 2.0 * cutoff * np.sinc(2.0 * cutoff * n) * np.blackman(taps)
+    return (h / np.sum(h)).astype(np.float32)
+
+
+class StreamResampler:
+    """Block-by-block resampler that keeps state between PortAudio callbacks.
+
+    Downsampling 48 kHz to 16 kHz needs a low-pass first: without it, hiss
+    and sibilants above 8 kHz fold back into the speech band Whisper hears.
+    The filter tail and the fractional read position carry over between
+    blocks, so block edges do not click and the output length does not drift.
+    """
+
+    TAPS = 255
+
+    def __init__(self, src_rate: int, dst_rate: int) -> None:
+        self.src_rate = int(src_rate)
+        self.dst_rate = int(dst_rate)
+        self.step = self.src_rate / float(self.dst_rate)
+        self._taps = None
+        if self.src_rate > self.dst_rate:
+            self._taps = _lowpass_taps(0.45 * self.dst_rate / self.src_rate, self.TAPS)
+            self._hist = np.zeros(self.TAPS - 1, dtype=np.float32)
+        self._prev: float | None = None
+        self._pos = 0.0
+
+    def process(self, block):
+        arr = np.asarray(block, dtype=np.float32)
+        if self.src_rate == self.dst_rate or len(arr) == 0:
+            return arr
+        if self._taps is not None:
+            buf = np.concatenate([self._hist, arr])
+            self._hist = buf[-(self.TAPS - 1) :]
+            arr = np.convolve(buf, self._taps, mode="valid").astype(np.float32)
+        prev = float(arr[0]) if self._prev is None else self._prev
+        ext = np.concatenate([np.array([prev], dtype=np.float32), arr])
+        last = len(ext) - 1
+        first = self._pos + 1.0
+        if first > last:
+            self._pos -= len(arr)
+            self._prev = float(arr[-1])
+            return np.zeros(0, dtype=np.float32)
+        count = int(math.floor((last - first) / self.step)) + 1
+        where = first + self.step * np.arange(count, dtype=np.float64)
+        out = np.interp(where, np.arange(len(ext), dtype=np.float64), ext).astype(np.float32)
+        self._pos = float(where[-1] + self.step - len(ext))
+        self._prev = float(arr[-1])
+        return out
+
+
 def rms(block) -> float:
     if np is None:
         if not block:

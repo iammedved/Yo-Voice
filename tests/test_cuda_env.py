@@ -59,6 +59,7 @@ class CudaEnvTests(unittest.TestCase):
         for src, _dest in bins:
             self.assertTrue(Path(src).is_file(), src)
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows API")
     def test_setup_prepends_bin_to_path(self):
         from yo import cuda_env
 

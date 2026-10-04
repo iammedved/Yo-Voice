@@ -79,6 +79,9 @@ class YoApp:
         self._token = 0
         self._utt = 0
         self._stopping = False
+        # A press while the last phrase is still being recognized starts the
+        # next session as soon as that phrase is pasted.
+        self._resume_task: str | None = None
         self._hotkey: HotkeyWatcher | None = None
         self._rebinding = False
         self._rebind_target = "transcribe"
@@ -146,6 +149,12 @@ class YoApp:
     def _press(self, task: str) -> bool:
         if self._rebinding:
             return False
+        if self._stopping and self.session.listening:
+            # The stop tail and the last phrase are still running. Dropping
+            # this press made the key look dead; queue it instead.
+            self._resume_task = "translate" if task == "translate" else "transcribe"
+            log.info("нажатие во время распознавания — продолжу после вставки (%s)", self._resume_task)
+            return False
         action = listen_press_action(
             listening=self.session.listening,
             current_task=self.session.task,
@@ -177,13 +186,14 @@ class YoApp:
         if self.session.listening or self._stopping:
             return False
         self._token += 1
+        self._resume_task = None
         self.session.start(task=task)
         self.overlay.set_task(task)
         self.vad = SpeechGate()
         self._utt = 0
         self._stopping = False
-        self._clip_owned = False
-        self._saved_clip = None
+        # Keep a clipboard saved by the previous session: its restore may
+        # still be pending, and forgetting it here lost the user's clipboard.
         with self._chunks_lock:
             self._chunks = []
         has_mic = self._sync_mic()
@@ -386,6 +396,7 @@ class YoApp:
         self.audio.stop(drain=False)
         self.session.stop()
         self._stopping = False
+        self._resume_task = None
         self.overlay.set_status(f"ошибка модели: {message}")
         timeout_add(2200, self._hide)
         return False
@@ -493,7 +504,22 @@ class YoApp:
         if hide_after and token == self._token:
             self.session.stop()
             self._stopping = False
-            timeout_add(900, self._hide)
+            self.overlay.set_live(False)
+            if not self._resume_after_stop():
+                timeout_add(900, self._hide)
+        return False
+
+    def _resume_after_stop(self) -> bool:
+        task = self._resume_task
+        self._resume_task = None
+        if task is None:
+            return False
+        timeout_add(0, self._resume_listen, task)
+        return True
+
+    def _resume_listen(self, task: str) -> bool:
+        if not self.session.listening and not self._stopping:
+            self.start_listen(task=task)
         return False
 
     def _commit_raw(
@@ -519,7 +545,14 @@ class YoApp:
                 raw,
             )
             raw = ""
-        text = self.session.commit_utterance(raw, task=task) if raw else ""
+        try:
+            text = self.session.commit_utterance(raw, task=task) if raw else ""
+        except Exception as exc:
+            # Never leave the session half-stopped: every later press would
+            # be ignored until restart.
+            log.exception("ошибка обработки текста")
+            self._show_defect("обработка распознанного текста", exc, "asr")
+            text = ""
         if text:
             self.overlay.set_preview(text.strip())
         else:
@@ -536,7 +569,8 @@ class YoApp:
             self.session.stop()
             self._stopping = False
             self.overlay.set_live(False)
-            timeout_add(900 if not text else 220, self._hide)
+            if not self._resume_after_stop():
+                timeout_add(900 if not text else 220, self._hide)
         return False
 
     def _clear_unrecognized(self) -> bool:
@@ -795,6 +829,10 @@ class YoApp:
         return False
 
     def _hide(self) -> bool:
+        if self.session.listening:
+            # A hide timer from the previous session; a new one started in
+            # the meantime and its cat must stay on screen.
+            return False
         self.overlay.hide()
         if sys.platform == "win32":
             try:

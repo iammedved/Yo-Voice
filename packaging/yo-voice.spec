@@ -57,6 +57,7 @@ hiddenimports = [
     "yo.app",
     "yo.overlay_win",
     "yo.hotkey_win",
+    "yo.keyrepeat",
     "yo.inject_win",
     "yo.ipc_win",
     "yo.settings_win",

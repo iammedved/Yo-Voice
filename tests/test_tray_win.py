@@ -1,4 +1,8 @@
+import sys
 import unittest
+
+if sys.platform != "win32":
+    raise unittest.SkipTest("Windows tray uses user32")
 
 from yo.tray_win import (
     INTRO_BALLOON,
