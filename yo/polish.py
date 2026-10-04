@@ -60,15 +60,19 @@ HALLUCINATIONS = (
     "ссылка в описании",
     "пишите в комментариях",
     "нажмите на колокольчик",
-    "music",
     "[музыка]",
     "(музыка)",
+    "[music]",
+    "(music)",
+    "♪",
     "thanks for watching",
     "thank you for watching",
     "subscribe to the channel",
 )
 
+# Whole-reply matches only: "music" inside "I love music" is a real phrase.
 EXACT_HALLUCINATIONS = {
+    "music",
     "благодарю",
     "thanks",
     "thank you",

@@ -11,7 +11,7 @@ from collections.abc import Callable
 import numpy as np
 import sounddevice as sd
 
-from yo.spectrum import SAMPLE_RATE, resample, rms, spectrum_bands
+from yo.spectrum import SAMPLE_RATE, DcBlocker, StreamResampler, rms, spectrum_bands
 
 log = logging.getLogger("yo.audio")
 
@@ -44,6 +44,15 @@ class AudioCapture:
         self._drain = threading.Event()
         self._drain.set()
         self._drain_pending = False
+        self._dc = DcBlocker(sample_rate)
+        self._resampler = StreamResampler(sample_rate, sample_rate)
+
+    def _prepare_rate(self, rate: int) -> None:
+        # Set before the stream starts: the first callback must already
+        # filter and resample at the rate this stream really runs at.
+        self.capture_rate = int(rate)
+        self._dc = DcBlocker(self.capture_rate)
+        self._resampler = StreamResampler(self.capture_rate, self.sample_rate)
 
     def start(self, device: int | None = None, *, exclusive: bool = False) -> None:
         self.stop(drain=False)
@@ -57,6 +66,7 @@ class AudioCapture:
             if key in silent_keys:
                 continue
             stream = None
+            self._prepare_rate(int(kwargs["samplerate"]))
             try:
                 stream = sd.InputStream(**kwargs, callback=self._callback)
                 stream.start()
@@ -75,7 +85,6 @@ class AudioCapture:
                     except Exception:
                         pass
                 continue
-            self.capture_rate = int(kwargs["samplerate"])
             self._stream = stream
             log.info(
                 "микрофон открыт device=%s sr=%s ch=%s exclusive=%s",
@@ -130,12 +139,11 @@ class AudioCapture:
                 block = np.mean(indata, axis=1)
             else:
                 block = np.copy(indata[:, 0] if indata.ndim > 1 else indata)
-            block = np.asarray(block, dtype=np.float32)
-            block = block - float(np.mean(block))
+            block = self._dc.process(np.asarray(block, dtype=np.float32))
             level = rms(block)
             self.peak_level = max(self.peak_level, level)
             bands = spectrum_bands(block, sample_rate=self.capture_rate)
-            pcm = resample(block, self.capture_rate, self.sample_rate)
+            pcm = self._resampler.process(block)
             self.on_block(pcm, level, bands)
         except Exception:
             log.exception("ошибка колбэка микрофона")

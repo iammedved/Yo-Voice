@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Pressing the key while the last phrase is still being recognized is no longer ignored. That phrase is pasted, then listening starts again. An old hide timer can no longer hide the cat of a session you just started. On Linux, starting again right after a stop no longer loses the clipboard you had before dictating.
+- Holding the key on Linux no longer turns listening on and off every third of a second. On Windows, letting go of the key while Shift is down no longer makes the next press do nothing.
+- The microphone is low-pass filtered before it is brought down to 16 kHz. Hiss and whine above 8 kHz used to fold into the speech band, which kept a phrase from ending at a pause and sent bare noise to recognition. The mic's DC offset is removed without a 100 Hz buzz at every block edge.
+- A phrase that contains the word "music" is pasted. Only a bare "Music" or "[Music]" is dropped as a recognizer artifact; before, "I love music" vanished in translate mode.
+- A backslash in your own replacements file (for example `C:\Users`) no longer breaks every phrase. If text cleanup fails anyway, listening still stops cleanly instead of ignoring the key until restart.
+
 - A settings file that cannot be read is left on disk. Ёхо uses the usual defaults only in memory until that file can be read again. A missing settings file is still created. A finished save writes a temporary file in the same folder and replaces the real file only after that write completes, so a crash in the middle does not leave a half-written settings file.
 - Cleanup after recognition no longer rewrites four real phrases: «и слушая», «у тора», «у сорта», and «громко и тонко». «громко четко» still becomes «громко и чётко», «находятся сорта» still becomes «находится у рта», and «стоит монитора» still becomes «стоит у монитора».
 - A pause inside one phrase is not sent back to recognition. The short margin stays only before the first speech and after the last.

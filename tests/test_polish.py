@@ -1,6 +1,6 @@
 import unittest
 
-from yo.polish import polish_ru
+from yo.polish import polish_en, polish_ru
 
 
 class PolishRuTests(unittest.TestCase):
@@ -214,6 +214,19 @@ class PolishRuTests(unittest.TestCase):
             polish_ru("привет. как тебя зовут", finalize=True),
             "Привет. Как тебя зовут?",
         )
+
+
+class MusicIsNotAlwaysAHallucinationTests(unittest.TestCase):
+    def test_phrase_with_music_is_kept(self):
+        self.assertEqual(polish_en("I love music", finalize=True), "I love music.")
+        self.assertEqual(
+            polish_ru("я слушаю YouTube Music", finalize=True),
+            "Я слушаю YouTube Music.",
+        )
+
+    def test_bare_music_tag_is_still_dropped(self):
+        for junk in ("Music.", "[Music]", "(music)", "♪"):
+            self.assertEqual(polish_en(junk, finalize=True), "", junk)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from Xlib import X, display
 from Xlib.error import BadAccess
 
 from yo.bind import OVERLAY_UI_BUTTONS, ToggleBind, normalize_bind
+from yo.keyrepeat import X11RepeatFilter
 
 log = logging.getLogger("yo.hotkey")
 
@@ -109,7 +110,9 @@ class HotkeyWatcher(threading.Thread):
 
         event_mask = 0
         for bind, _cb in self.binds:
-            event_mask |= X.ButtonPressMask if bind.kind == "button" else X.KeyPressMask
+            event_mask |= (
+                X.ButtonPressMask if bind.kind == "button" else X.KeyPressMask | X.KeyReleaseMask
+            )
         if event_mask:
             try:
                 root.change_attributes(event_mask=event_mask)
@@ -117,12 +120,16 @@ class HotkeyWatcher(threading.Thread):
                 log.exception("не удалось подписаться на события корня")
         last = 0.0
         handlers = {(bind.kind, bind.code): cb for bind, cb in self.binds}
+        repeats = X11RepeatFilter()
         try:
             while self._running:
                 if dpy.pending_events() == 0:
                     time.sleep(0.02)
                     continue
                 ev = dpy.next_event()
+                if ev.type == X.KeyRelease:
+                    repeats.release(int(getattr(ev, "detail", 0) or 0), int(getattr(ev, "time", 0) or 0))
+                    continue
                 kind = "button" if ev.type == X.ButtonPress else "key" if ev.type == X.KeyPress else ""
                 if not kind:
                     continue
@@ -131,6 +138,9 @@ class HotkeyWatcher(threading.Thread):
                 if cb is None:
                     continue
                 if kind == "key":
+                    # Holding the key must not flip dictation on and off.
+                    if not repeats.press(code, int(getattr(ev, "time", 0) or 0)):
+                        continue
                     state = int(getattr(ev, "state", 0))
                     if state & (X.ControlMask | X.Mod1Mask | X.Mod4Mask | X.ShiftMask):
                         continue

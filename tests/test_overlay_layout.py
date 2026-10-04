@@ -1,4 +1,5 @@
 import ast
+import sys
 import unittest
 from pathlib import Path
 
@@ -103,6 +104,7 @@ class OverlayLayoutTests(unittest.TestCase):
         self.assertIn("_unown_overlay", park)
         self.assertIn("_unown_overlay", hide)
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows API")
     def test_overlay_anchors_to_paste_target_not_tray(self):
         from yo.overlay_win import _pos_outside_rect, _skip_attach
 
