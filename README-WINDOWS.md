@@ -59,8 +59,8 @@ Right-click the cat → **Назначить кнопку** to rebind the toggle
 Ёхо can ignore other people: a TV, a call on speaker, someone talking in the room.
 
 1. Right-click the cat → settings → **Записать мой голос**.
-2. Press **Начать** and read the text in the window aloud for about 25 seconds, in your usual voice, with the microphone you dictate with.
-3. When it says **Готово**, **Слушать только мой голос** is ticked. Untick it to hear everyone again.
+2. Turn off the TV and music, press **Начать** and read the text in the window aloud for about 25 seconds, in your usual voice, with the microphone you dictate with.
+3. When it says **Готово**, **Слушать только мой голос** is ticked. Untick it to hear everyone again. While the box is ticked but no sample is recorded, the cat says **запишите свой голос** and everyone is still heard.
 
 The first recording downloads a 26 MB voice model (WeSpeaker ResNet34) from GitHub to `%LOCALAPPDATA%\yo-voice\speaker\`. The sample itself is not kept: only a list of 256 numbers in `%APPDATA%\yo-voice\voiceprint.json`. Nothing is sent anywhere.
 

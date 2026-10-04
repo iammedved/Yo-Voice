@@ -50,7 +50,7 @@ from yo.session import (
     empty_speech_feedback,
     too_sparse_for_duration,
 )
-from yo.speaker import SpeakerFilter
+from yo.speaker import NO_SAMPLE_HINT, SpeakerFilter
 from yo.spectrum import SAMPLE_RATE
 from yo.vad import SpeechGate, trim_to_speech
 
@@ -476,6 +476,10 @@ class YoApp:
                     threshold=float(self.config.speaker_threshold),
                     sample_rate=self.config.sample_rate,
                 )
+                if self.speaker.missing_sample:
+                    # The box is ticked but nothing to compare with: say so
+                    # instead of quietly letting a TV through.
+                    idle_add(self._show_no_sample)
             if speech is not None and len(speech) > SAMPLE_RATE * 0.12:
                 speech_seconds = len(speech) / float(SAMPLE_RATE)
                 raw = self.engine.transcribe(speech, self.config.sample_rate)
@@ -546,6 +550,16 @@ class YoApp:
             self._stopping = False
             self.overlay.set_live(False)
             timeout_add(900 if not text else 220, self._hide)
+        return False
+
+    def _show_no_sample(self) -> bool:
+        self.overlay.set_status(NO_SAMPLE_HINT)
+        timeout_add(2500, self._clear_no_sample)
+        return False
+
+    def _clear_no_sample(self) -> bool:
+        if self.overlay.status == NO_SAMPLE_HINT:
+            self.overlay.set_status("")
         return False
 
     def _clear_unrecognized(self) -> bool:

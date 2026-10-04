@@ -49,12 +49,15 @@ ENROLL_MIN_SPEECH_S = 8.0
 ENROLL_SECONDS = 25.0
 
 ENROLL_TEXT = (
+    "Выключите телевизор и музыку: записываться должен только ваш голос.\n"
     "Прочитайте вслух обычным голосом, как будто диктуете:\n\n"
     "«Сегодня я проверяю голосовой ввод. Программа должна слушать только меня "
     "и не обращать внимания на телевизор, музыку и чужие разговоры. "
     "Раз, два, три, четыре, пять. Съешь же ещё этих мягких французских булок "
     "да выпей чаю. Если я говорю тихо или быстро, это всё равно мой голос.»"
 )
+
+NO_SAMPLE_HINT = "запишите свой голос"
 
 ProgressFn = Callable[[str], None]
 
@@ -372,6 +375,8 @@ class SpeakerFilter:
         self._print_mtime: float | None = None
         self._print_path: Path | None = None
         self._warned = False
+        # True after a phrase passed unchecked because there is no sample.
+        self.missing_sample = False
 
     def _voiceprint(self, path: Path | None = None) -> np.ndarray | None:
         file = path or voiceprint_path()
@@ -389,7 +394,8 @@ class SpeakerFilter:
 
     def apply(self, pcm: np.ndarray | None, *, threshold: float, sample_rate: int = SAMPLE_RATE) -> np.ndarray | None:
         voiceprint = self._voiceprint()
-        if voiceprint is None or not model_ready(self.encoder.path):
+        self.missing_sample = voiceprint is None or not model_ready(self.encoder.path)
+        if self.missing_sample:
             if not self._warned:
                 self._warned = True
                 log.warning("«только мой голос» включён, но образец голоса не записан — пропускаю всех")

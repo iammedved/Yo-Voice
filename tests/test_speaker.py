@@ -172,8 +172,13 @@ class SpeakerFilterTests(unittest.TestCase):
     def test_without_a_sample_everyone_passes(self):
         enc = FakeEncoder()
         pcm = _tone(3.0, 1200)
-        self.assertIs(S.SpeakerFilter(enc).apply(pcm, threshold=0.4), pcm)
+        flt = S.SpeakerFilter(enc)
+        self.assertIs(flt.apply(pcm, threshold=0.4), pcm)
         self.assertEqual(enc.calls, 0)
+        self.assertTrue(flt.missing_sample, "the cat must say a sample is missing")
+        S.save_voiceprint(ME, quality=1.0, seconds=20, path=self.path)
+        flt.apply(pcm, threshold=0.4)
+        self.assertFalse(flt.missing_sample)
 
     def test_with_a_sample_other_voice_is_dropped(self):
         S.save_voiceprint(ME, quality=1.0, seconds=20, path=self.path)
