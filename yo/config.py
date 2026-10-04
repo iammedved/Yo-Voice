@@ -30,6 +30,8 @@ class Config:
     overlay_y: int | None = None
     microphone: str = ""  # PortAudio name; empty = auto
     tray_intro_shown: bool = False
+    speaker_filter: bool = False  # only the enrolled voice reaches recognition
+    speaker_threshold: float = 0.40
 
 
 def _read_config_data(file: Path) -> dict:

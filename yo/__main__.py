@@ -134,12 +134,14 @@ def _run(argv: list[str] | None = None) -> int:
             "bind",
             "reload",
             "prefetch",
+            "enroll",
+            "voice",
         ),
     )
     parser.add_argument(
         "bind_spec",
         nargs="*",
-        help="для bind: имя или код клавиши (F8, 0x77, ё, mouse:8)",
+        help="для bind: имя или код клавиши (F8, 0x77, ё, mouse:8); для voice: on или off",
     )
     parser.add_argument("--seconds", type=float, default=8.0, help="длительность демо overlay")
     args = parser.parse_args(argv)
@@ -167,6 +169,10 @@ def _run(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "bind":
         return _cmd_bind(args.bind_spec)
+    if args.command == "enroll":
+        return _cmd_enroll()
+    if args.command == "voice":
+        return _cmd_voice(args.bind_spec)
 
     if not daemon_alive():
         if args.command in {"status", "quit"}:
@@ -263,6 +269,71 @@ def _cmd_bind(spec_parts: list[str]) -> int:
         except OSError as exc:
             _cli_out(f"конфиг записан, но демон не перечитал: {exc}", error=True)
             return 1
+    return 0
+
+
+def _reload_daemon() -> None:
+    from yo.ipc import daemon_alive, send_command
+
+    if daemon_alive():
+        try:
+            send_command("reload")
+        except OSError as exc:
+            _cli_out(f"конфиг записан, но демон не перечитал: {exc}", error=True)
+
+
+def _cmd_enroll() -> int:
+    from yo.config import load_config, patch_config
+    from yo.speaker import ENROLL_TEXT, quality_note, run_enrollment
+
+    cfg = load_config()
+    print(ENROLL_TEXT)
+    print()
+    try:
+        input("Нажмите Enter и начинайте читать… ")
+    except EOFError:
+        pass
+    last = {"text": ""}
+
+    def progress(text: str) -> None:
+        if text != last["text"]:
+            last["text"] = text
+            print(f"\r{text}    ", end="", flush=True)
+
+    try:
+        quality, seconds = run_enrollment(progress, microphone=cfg.microphone or "")
+    except Exception as exc:
+        print()
+        _cli_out(f"не получилось: {exc}", error=True)
+        return 1
+    print()
+    patch_config(speaker_filter=True)
+    _cli_out(f"готово: {seconds:.0f} с речи, {quality_note(quality)}; слушаю только ваш голос")
+    _reload_daemon()
+    return 0
+
+
+def _cmd_voice(spec_parts: list[str]) -> int:
+    from yo.config import load_config, patch_config
+    from yo.speaker import has_voiceprint
+
+    spec = " ".join(spec_parts).strip().lower()
+    if spec in {"on", "вкл"}:
+        if not has_voiceprint():
+            _cli_out("сначала запишите образец: yo-voice enroll", error=True)
+            return 1
+        patch_config(speaker_filter=True)
+        _reload_daemon()
+    elif spec in {"off", "выкл"}:
+        patch_config(speaker_filter=False)
+        _reload_daemon()
+    elif spec:
+        _cli_out("пример: yo-voice voice on | off", error=True)
+        return 2
+    cfg = load_config()
+    state = "только мой голос" if cfg.speaker_filter else "слушаю всех"
+    sample = "образец записан" if has_voiceprint() else "образца нет"
+    _cli_out(f"{state}, {sample}, порог {cfg.speaker_threshold:.2f}")
     return 0
 
 

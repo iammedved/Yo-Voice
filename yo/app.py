@@ -50,6 +50,7 @@ from yo.session import (
     empty_speech_feedback,
     too_sparse_for_duration,
 )
+from yo.speaker import SpeakerFilter
 from yo.spectrum import SAMPLE_RATE
 from yo.vad import SpeechGate, trim_to_speech
 
@@ -74,6 +75,7 @@ class YoApp:
         self.session = DictationSession(self._inject_text)
         self.audio = AudioCapture(self._on_block, sample_rate=self.config.sample_rate)
         self.vad = SpeechGate()
+        self.speaker = SpeakerFilter()
         self._chunks: list[np.ndarray] = []
         self._chunks_lock = threading.Lock()
         self._token = 0
@@ -467,6 +469,13 @@ class YoApp:
         speech_seconds = 0.0
         try:
             speech = trim_to_speech(audio, self.config.sample_rate, backend="auto")
+            if speech is not None and self.config.speaker_filter:
+                # Other voices are dropped quietly: no «не разобрал» for a TV.
+                speech = self.speaker.apply(
+                    speech,
+                    threshold=float(self.config.speaker_threshold),
+                    sample_rate=self.config.sample_rate,
+                )
             if speech is not None and len(speech) > SAMPLE_RATE * 0.12:
                 speech_seconds = len(speech) / float(SAMPLE_RATE)
                 raw = self.engine.transcribe(speech, self.config.sample_rate)

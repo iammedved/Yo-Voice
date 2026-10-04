@@ -72,6 +72,8 @@ hiddenimports = [
     "yo.report_ui",
     "yo.mt",
     "yo.vad",
+    "yo.speaker",
+    "yo.enroll_ui",
     "yo.audio",
     "yo.bind",
     "yo.capture",

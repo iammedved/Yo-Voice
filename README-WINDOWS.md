@@ -54,6 +54,22 @@ Right-click the cat → **Назначить кнопку** to rebind the toggle
 3. If the speech model was not downloaded during Setup and is not already on disk, the first start shows the same 1–100% window, then starts the program again after a new download.
 4. Speak and pause. Text is pasted into the focused field.
 
+## Only my voice
+
+Ёхо can ignore other people: a TV, a call on speaker, someone talking in the room.
+
+1. Right-click the cat → settings → **Записать мой голос**.
+2. Press **Начать** and read the text in the window aloud for about 25 seconds, in your usual voice, with the microphone you dictate with.
+3. When it says **Готово**, **Слушать только мой голос** is ticked. Untick it to hear everyone again.
+
+The first recording downloads a 26 MB voice model (WeSpeaker ResNet34) from GitHub to `%LOCALAPPDATA%\yo-voice\speaker\`. The sample itself is not kept: only a list of 256 numbers in `%APPDATA%\yo-voice\voiceprint.json`. Nothing is sent anywhere.
+
+Each phrase is cut into 1.5-second windows and each is compared with that voiceprint. Windows that are not you are cut out before recognition, and a phrase that is all someone else is dropped without **не разобрал**. Two people talking at the same moment cannot be split: that stretch is kept or dropped as a whole. A phrase under half a second is too short to judge and always passes.
+
+If your own phrases get dropped, record the sample again in a quiet room. If other voices still get through, raise `speaker_threshold` in `config.json` (default `0.40`; same person usually scores 0.5–0.8, other people below 0.3). The program log in `%LOCALAPPDATA%\yo-voice\` (tray → **Открыть журнал**) has a `голос:` line with the scores of each phrase.
+
+From a terminal: `yo-voice enroll` records the sample, `yo-voice voice on` / `off` switches the filter.
+
 ## Recognition
 
 NVIDIA CUDA when a NVIDIA GPU is present (`int8_float16` for the Russian model). Otherwise CPU `int8`. No ROCm, DirectML, or Vulkan path. A machine without NVIDIA does not need an NVIDIA driver and will feel slower after each phrase.
