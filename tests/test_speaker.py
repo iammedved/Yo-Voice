@@ -221,6 +221,51 @@ class ModelDownloadTests(unittest.TestCase):
             self.assertTrue(S.model_ready(dst))
 
 
+class FakeCapture:
+    """First device refuses like WDM-KS did; the next one streams speech."""
+
+    refuse = {7}
+
+    def __init__(self, on_block, sample_rate=SR) -> None:
+        self.on_block = on_block
+        self.tried: list = []
+        self.stopped = False
+
+    def start(self, device=None, *, exclusive=False):
+        self.tried.append((device, exclusive))
+        if device in self.refuse:
+            raise RuntimeError("Unanticipated host error [Windows WDM-KS error 0]")
+        for _ in range(5):
+            self.on_block(_tone(0.1, 150), 0.1, [])
+
+    def stop(self, *, drain=True):
+        self.stopped = True
+
+
+class RecordTests(unittest.TestCase):
+    def test_falls_back_to_the_next_copy_of_the_mic(self):
+        made = []
+
+        def factory(on_block, sample_rate):
+            made.append(FakeCapture(on_block, sample_rate))
+            return made[-1]
+
+        with mock.patch("yo.capture.capture_candidate_indices", return_value=[7, 3]):
+            pcm = S.record_pcm(0.05, "Headset", capture_factory=factory)
+        self.assertEqual([d for d, _ex in made[0].tried], [7, 3])
+        self.assertTrue(made[0].stopped)
+        self.assertEqual(len(pcm), 5 * int(0.1 * SR))
+
+    def test_every_device_refusing_is_a_clear_error(self):
+        cap = FakeCapture(lambda *_a: None)
+        cap.refuse = {7, None}
+        with mock.patch("yo.capture.capture_candidate_indices", return_value=[7]):
+            with self.assertRaises(RuntimeError) as ctx:
+                S.open_capture(cap, "Headset")
+        self.assertIn("не удалось открыть микрофон", str(ctx.exception))
+        self.assertIn(None, [d for d, _ex in cap.tried])
+
+
 class ConfigTests(unittest.TestCase):
     def test_filter_is_off_by_default(self):
         cfg = Config()

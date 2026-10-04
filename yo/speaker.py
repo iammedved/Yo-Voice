@@ -436,46 +436,70 @@ def enroll_from_pcm(
     return quality, seconds
 
 
-def record_pcm(seconds: float, device: int | None = None, *, on_level: Callable[[float, float], None] | None = None) -> np.ndarray:
-    """Record mono 16 kHz from the chosen mic, reporting (elapsed, rms)."""
-    import sounddevice as sd
+def open_capture(capture, microphone: str = "") -> int | None:
+    """Open the dictation mic the way the app does: every host-API copy of
+    the chosen device (WASAPI first), then the system default, shared mode
+    before exclusive. One driver refusing (WDM-KS) must not stop the sample.
+    """
+    import sys
 
-    from yo.spectrum import resample, rms
+    from yo.capture import capture_candidate_indices
 
+    try:
+        candidates: list[int | None] = list(capture_candidate_indices(microphone))
+    except Exception:
+        candidates = []
+    if None not in candidates:
+        candidates.append(None)
+    modes = [False, True] if sys.platform == "win32" else [False]
+    first_error: Exception | None = None
+    for exclusive in modes:
+        for device in candidates:
+            try:
+                capture.start(device=device, exclusive=exclusive)
+                log.info("образец голоса: микрофон %s exclusive=%s", device, exclusive)
+                return device
+            except Exception as exc:
+                log.warning("образец голоса: device=%s exclusive=%s: %s", device, exclusive, exc)
+                if first_error is None:
+                    first_error = exc
+    raise RuntimeError(f"не удалось открыть микрофон: {first_error}")
+
+
+def record_pcm(
+    seconds: float,
+    microphone: str = "",
+    *,
+    on_level: Callable[[float, float], None] | None = None,
+    capture_factory=None,
+) -> np.ndarray:
+    """Record 16 kHz mono from the dictation mic, reporting (elapsed, rms)."""
+    if capture_factory is None:
+        from yo.audio import AudioCapture
+
+        capture_factory = AudioCapture
     chunks: list[np.ndarray] = []
-    info = sd.query_devices(device, "input") if device is not None else sd.query_devices(kind="input")
-    rate = int(info.get("default_samplerate") or SAMPLE_RATE)
-    start = time.monotonic()
+    clock = {"start": time.monotonic()}
 
-    def callback(indata, _frames, _time, _status) -> None:
-        block = np.mean(indata, axis=1) if indata.ndim > 1 and indata.shape[1] > 1 else indata.reshape(-1)
-        block = np.asarray(block, dtype=np.float32)
-        chunks.append(np.copy(block))
+    def on_block(pcm, level, _bands) -> None:
+        chunks.append(np.asarray(pcm, dtype=np.float32).copy())
         if on_level is not None:
             try:
-                on_level(time.monotonic() - start, rms(block))
+                on_level(time.monotonic() - clock["start"], float(level))
             except Exception:
                 pass
 
-    with sd.InputStream(device=device, channels=1, samplerate=rate, dtype="float32", callback=callback):
-        while time.monotonic() - start < seconds:
-            time.sleep(0.05)
-    if not chunks:
-        return np.zeros(0, dtype=np.float32)
-    pcm = np.concatenate(chunks)
-    pcm = pcm - float(np.mean(pcm))
-    return resample(pcm, rate, SAMPLE_RATE) if rate != SAMPLE_RATE else pcm
-
-
-def record_device(microphone: str = "") -> int | None:
-    """The same mic dictation uses (settings name), else the system default."""
+    capture = capture_factory(on_block, sample_rate=SAMPLE_RATE)
+    open_capture(capture, microphone)
+    clock["start"] = time.monotonic()
     try:
-        from yo.capture import capture_candidate_indices
-
-        found = capture_candidate_indices(microphone)
-        return found[0] if found else None
-    except Exception:
-        return None
+        while time.monotonic() - clock["start"] < seconds:
+            time.sleep(0.05)
+    finally:
+        capture.stop(drain=False)
+    if not chunks:
+        raise RuntimeError("микрофон не дал звука — проверьте, что он включён")
+    return np.concatenate(chunks)
 
 
 def run_enrollment(
@@ -495,7 +519,7 @@ def run_enrollment(
         left = max(0, int(round(seconds - elapsed)))
         progress(f"говорите… осталось {left} с")
 
-    pcm = record_pcm(seconds, record_device(microphone), on_level=on_level)
+    pcm = record_pcm(seconds, microphone, on_level=on_level)
     progress("сохраняю отпечаток голоса…")
     return enroll_from_pcm(pcm)
 
