@@ -4,7 +4,7 @@
 
 <img src="assets/readme-hero.png" alt="Yo-Voice cat speaking into a microphone. Overlay status Слушаю and transcript: Нажал ё — текст уже в поле." width="100%">
 
-**Yo-Voice** (Ёхо) is local Russian dictation for **Linux** and **Windows**. Press the hotkey once, speak, pause — the transcript is pasted into whatever text field has focus. Press the same control again to stop. Releasing the key does nothing: this is a toggle, not hold-to-talk.
+**Yo-Voice** (Ёхо) is local Russian dictation for **Linux** and **Windows**. Press the hotkey once and speak, with as many pauses as you like. Press the same control again: everything you said is pasted at once into whatever text field has focus at that moment. Releasing the key does nothing: this is a toggle, not hold-to-talk.
 
 It is not a cloud product. Microphone audio and transcripts stay on the computer that runs it.
 
@@ -24,7 +24,7 @@ Yo-Voice 1.0.0 does **not**:
 - Run on **macOS**
 - Run on a **Wayland-only** Linux session (Linux needs **X11** for the global hotkey and paste)
 - Send audio or text to the cloud, or offer an account / sync
-- Stream words into the cursor **while you are still talking** (it pastes after a pause, or when you press the hotkey again)
+- Stream words into the cursor **while you are still talking** (it pastes once, when you press the hotkey again)
 - Keep a history of recordings or WAV files
 - Translate into languages other than English (the optional second hotkey is Russian speech → English text only)
 - Use an AMD, Intel, or other non-NVIDIA graphics chip for recognition (that path is the CPU)
@@ -109,7 +109,7 @@ The installer:
 1. If the Desktop icon asks for permission, choose **Allow Launching**.
 2. Click **Ёхо**, or run `yo-voice` (add `~/.local/bin` to `PATH` if needed).
 3. Press **ё** / **\`**. The cat appears. The **first** time, it downloads the model and the overlay may show a loading status for a minute.
-4. Speak Russian. When you pause, text is pasted at the caret. Press the hotkey again to stop.
+4. Speak Russian; pauses are fine. Press the hotkey again to stop, and the whole text is pasted at the caret.
 
 Right-click the cat to choose the microphone (**Авто** = automatic) or to rebind the toggle key / mouse button.
 
@@ -149,7 +149,7 @@ Windows users do not need Python or a clone. Download **[Yo-Voice-Setup.exe](htt
 5. The Ready page names the mode: NVIDIA CUDA, or CPU when no NVIDIA adapter was found. Unknown adapters still get the NVIDIA libraries, with CPU fallback if there is no NVIDIA GPU.
 6. Finish. The last page can start Ёхо. Desktop and Start Menu shortcuts are named **Ёхо** and leave it in the tray.
 
-NLLB is still a separate download the first time you translate. Then press **ё** / **\`**, speak, and pause. The model cache is `%LOCALAPPDATA%\yo-voice\`. Paste is Ctrl+V, or Ctrl+Shift+V in Windows Terminal. The pasted text stays on the clipboard.
+NLLB is still a separate download the first time you translate. Then press **ё** / **\`**, speak, and press it again. The model cache is `%LOCALAPPDATA%\yo-voice\`. Paste is Ctrl+V, or Ctrl+Shift+V in Windows Terminal. The pasted text stays on the clipboard.
 
 If something fails, the program shows the defect once: date and time, what you were doing, an error code, and a cause when it can tell. Otherwise the report still has the code, the time, and which block it came from. One button, **Отправить разработчику**, opens a prefilled GitHub issue at `https://github.com/iammedved/Yo-Voice/issues/new`. There is no token in the program. You still press submit in the browser. If the link would be too long, the same text is also copied. The tray item is **Сообщить о сбое**. The developer sees the report when that issue is created.
 
@@ -164,7 +164,7 @@ From a source checkout, Python **3.12** and `scripts/install.ps1` are the other 
 1. Hotkey (or the launcher) tells this program to listen.
 2. Overlay appears without stealing keyboard focus, so the caret stays in your app.
 3. Silero VAD keeps silence out of Whisper; only speech is transcribed. A short margin stays before the first speech and after the last. A pause in the middle of the phrase is not pulled back in.
-4. On a pause, the utterance is recognized locally and pasted (Ctrl+V; Ctrl+Shift+V in a terminal).
+4. On a pause, the utterance is recognized locally and kept. On the second press everything is pasted at once (Ctrl+V; Ctrl+Shift+V in a terminal).
 5. Press the hotkey again to flush the last bit and hide the cat.
 
 ## Troubleshooting

@@ -1,6 +1,6 @@
 # Yo-Voice (Ёхо) on Windows
 
-Local Russian dictation for 64-bit Windows 10 or 11. Press the hotkey **once**, speak, pause — the transcript is pasted into the focused text field. Press the same control again to stop. Releasing the key does not stop or paste. Audio never leaves this machine.
+Local Russian dictation for 64-bit Windows 10 or 11. Press the hotkey **once** and speak, pauses included. Press the same control again: the whole transcript is pasted into the field that has focus at that moment. Releasing the key does not stop or paste. Audio never leaves this machine.
 
 The same program on Linux is in [README.md](README.md). Linux needs X11. Windows does not use that path.
 
@@ -52,7 +52,7 @@ Right-click the cat → **Назначить кнопку** to rebind the toggle
 1. Start Ёхо from the shortcut, or tick logon start and sign in again.
 2. Press **ё**. The cat shows **Жду**, then **Можно говорить**, then **Слушаю**.
 3. If the speech model was not downloaded during Setup and is not already on disk, the first start shows the same 1–100% window, then starts the program again after a new download.
-4. Speak and pause. Text is pasted into the focused field.
+4. Speak (pauses are fine), then press the hotkey again. Text is pasted into the focused field.
 
 ## Only my voice
 
@@ -60,17 +60,21 @@ Right-click the cat → **Назначить кнопку** to rebind the toggle
 
 1. Right-click the cat → settings → **Записать мой голос**.
 2. Turn off the TV and music, press **Начать** and read the text in the window aloud for about 25 seconds, in your usual voice, with the microphone you dictate with.
-3. When it says **Готово**, **Слушать только мой голос** is ticked. Untick it to hear everyone again. While the box is ticked but no sample is recorded, the cat says **запишите свой голос** and everyone is still heard.
+3. When it says **Готово**, **Слушать только мой голос** is ticked. Untick it to hear everyone again. While the box is ticked but no sample is recorded, the cat says **запишите свой голос** and blocks input until enrollment. A missing model or a comparison error never lets unchecked speech through.
 
 The first recording downloads a 26 MB voice model (WeSpeaker ResNet34) from GitHub to `%LOCALAPPDATA%\yo-voice\speaker\`. The sample itself is not kept: only a list of 256 numbers in `%APPDATA%\yo-voice\voiceprint.json`. Nothing is sent anywhere.
 
-Each phrase is cut into 1.5-second windows and each is compared with that voiceprint. Windows that are not you are cut out before recognition, and a phrase that is all someone else is dropped without **не разобрал**. Two people talking at the same moment cannot be split: that stretch is kept or dropped as a whole. A phrase under half a second is too short to judge and always passes.
+Each phrase is cut into 1.5-second windows and each is compared with that voiceprint. Windows that are not you are cut out before recognition, and a phrase that is all someone else is dropped without **не разобрал**. Two people talking at the same moment cannot be split: that stretch is kept or dropped as a whole. A clip under half a second is too short to verify and is dropped when this filter is enabled; use a longer phrase.
 
 If your own phrases get dropped, record the sample again in a quiet room. If other voices still get through, raise `speaker_threshold` in `config.json` (default `0.40`; same person usually scores 0.5–0.8, other people below 0.3). The program log in `%LOCALAPPDATA%\yo-voice\` (tray → **Открыть журнал**) has a `голос:` line with the scores of each phrase.
 
 From a terminal: `yo-voice enroll` records the sample, `yo-voice voice on` / `off` switches the filter.
 
 ## Recognition
+
+The 2026-10-06 local hotfix removes automatic gain before speech detection, requires Silero to confirm speech, and limits gain before Whisper to 4× (previously 40×). Loudness alone cannot bypass Silero. If Silero cannot load, recognition reports an error instead of falling back to a noise-sensitive energy detector. The app does not change the Windows microphone volume.
+
+Idle capture retains only 0.4 seconds of pre-roll; continuous speech is submitted in chunks of at most approximately 30 seconds. A selected microphone is never silently replaced with another device, and a successfully opened silent stream is kept. Very faint speech may need the microphone closer. A TV is real speech: rejecting its speaker requires the enrolled-voice filter, and simultaneous overlapping voices remain an accuracy limitation.
 
 NVIDIA CUDA when a NVIDIA GPU is present (`int8_float16` for the Russian model). Otherwise CPU `int8`. No ROCm, DirectML, or Vulkan path. A machine without NVIDIA does not need an NVIDIA driver and will feel slower after each phrase.
 

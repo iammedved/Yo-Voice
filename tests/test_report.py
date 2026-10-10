@@ -276,10 +276,14 @@ class IssueUrlTests(unittest.TestCase):
         self.assertEqual(query["body"][0], report.text())
 
     def test_builder_import_does_not_open_a_window(self):
+        import subprocess
         import sys
 
-        self.assertNotIn("yo.report_ui", sys.modules)
-        self.assertNotIn("tkinter", sys.modules)
+        # Other tests legitimately import the app. Test this import in isolation.
+        result = subprocess.run([sys.executable, "-c",
+            "import yo.report, sys; assert 'yo.report_ui' not in sys.modules; "
+            "assert 'tkinter' not in sys.modules"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

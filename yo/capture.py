@@ -422,9 +422,7 @@ def resolve_portaudio_device(
     pa_devices = devices if devices is not None else _query_portaudio_devices()
     preferred = (name or "").strip()
     if preferred:
-        found = _best_index_for_name(pa_devices, preferred)
-        if found is not None:
-            return found
+        return _best_index_for_name(pa_devices, preferred)
     return preferred_portaudio_device(pactl_text=pactl_text, devices=devices)
 
 

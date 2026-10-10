@@ -161,7 +161,7 @@ class PortAudioFallbackTests(unittest.TestCase):
             preferred_portaudio_device(pactl_text=PULSE_USB_HEADSET, devices=devices),
         )
 
-    def test_missing_saved_name_falls_back_to_auto(self):
+    def test_missing_selected_mic_does_not_open_another(self):
         devices = [
             {"name": "Razer Barracuda X: USB Audio (hw:1,0)", "max_input_channels": 1},
             {"name": "pipewire", "max_input_channels": 64},
@@ -172,7 +172,7 @@ class PortAudioFallbackTests(unittest.TestCase):
                 pactl_text=PULSE_USB_HEADSET,
                 devices=devices,
             ),
-            0,
+            None,
         )
 
     def test_list_skips_monitors_and_dead_jacks(self):

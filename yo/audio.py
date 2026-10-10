@@ -51,14 +51,12 @@ class AudioCapture:
         self._drain_pending = False
         self._drain.set()
         last_error: Exception | None = None
-        silent_keys: set[tuple] = set()
         for kwargs in _input_stream_plans(device, self.sample_rate, exclusive=exclusive):
-            key = (kwargs.get("samplerate"), bool(kwargs.get("extra_settings")))
-            if key in silent_keys:
-                continue
             stream = None
             try:
                 stream = sd.InputStream(**kwargs, callback=self._callback)
+                # The first callback can run before start() returns.
+                self.capture_rate = int(kwargs["samplerate"])
                 stream.start()
             except Exception as exc:
                 last_error = exc
@@ -86,20 +84,10 @@ class AudioCapture:
             )
             if sys.platform == "win32" and _probe_stream_silent(self):
                 log.warning(
-                    "тихий поток sr=%s peak_rms=%s — другой формат",
+                    "тихий поток sr=%s peak_rms=%s — сохраняю выбранный микрофон",
                     self.capture_rate,
                     self.peak_level,
                 )
-                silent_keys.add(key)
-                self._stream = None
-                try:
-                    stream.stop()
-                    stream.close()
-                except Exception:
-                    pass
-                last_error = RuntimeError("микрофон молчит")
-                self.peak_level = 0.0
-                continue
             return
         if last_error is not None:
             raise last_error

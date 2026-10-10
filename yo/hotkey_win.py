@@ -15,6 +15,7 @@ from collections.abc import Callable
 from ctypes import wintypes
 
 from yo.bind import OVERLAY_UI_BUTTONS, ToggleBind, accept_capture_event, normalize_bind
+from yo.play import hotkey_yields_to_game
 from yo.winapi import hwnd_int
 
 log = logging.getLogger("yo.hotkey")
@@ -273,6 +274,8 @@ class HotkeyWatcher(threading.Thread):
         self._mproc = None
         self._keys_down: set[int] = set()
         self._handlers: dict[tuple[str, int], Callable[[], None]] = handlers_for_binds(self.binds)
+        self._passed_keys: set[int] = set()
+        self._passed_buttons: set[int] = set()
 
     def stop(self) -> None:
         self._running = False
@@ -390,6 +393,12 @@ class HotkeyWatcher(threading.Thread):
                 cb = self._handler_for_key(vk)
                 if cb is not None:
                     message = int(wparam)
+                    if hotkey_yields_to_game() or vk in self._passed_keys:
+                        if message in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                            self._passed_keys.add(vk)
+                        elif message in (WM_KEYUP, WM_SYSKEYUP):
+                            self._passed_keys.discard(vk)
+                        return int(user32.CallNextHookEx(self._khook, ncode, wparam, lparam))
                     if message in (WM_KEYDOWN, WM_SYSKEYDOWN):
                         if vk in self._keys_down:
                             return 1
@@ -412,9 +421,16 @@ class HotkeyWatcher(threading.Thread):
             except Exception:
                 down, up = None, None
             if down is not None and ("button", down) in self._handlers:
+                if hotkey_yields_to_game():
+                    self._passed_buttons.add(down)
+                    return int(user32.CallNextHookEx(self._mhook, ncode, wparam, lparam))
+                self._passed_buttons.discard(down)
                 user32.PostThreadMessageW(self._tid, WM_YO_MOUSE, down, 0)
                 return 1
             if up is not None and ("button", up) in self._handlers:
+                if up in self._passed_buttons or hotkey_yields_to_game():
+                    self._passed_buttons.discard(up)
+                    return int(user32.CallNextHookEx(self._mhook, ncode, wparam, lparam))
                 return 1
         return int(user32.CallNextHookEx(self._mhook, ncode, wparam, lparam))
 

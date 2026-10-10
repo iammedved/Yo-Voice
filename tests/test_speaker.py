@@ -88,10 +88,10 @@ class OwnVoiceOnlyTests(unittest.TestCase):
         self.assertIsNone(kept)
         self.assertEqual(len(scores), 1)
 
-    def test_very_short_phrase_passes_unjudged(self):
+    def test_very_short_phrase_cannot_bypass_identity(self):
         pcm = _tone(0.3, 1200)
         kept, scores = S.own_voice_only(pcm, ME, FakeEncoder())
-        self.assertIs(kept, pcm)
+        self.assertIsNone(kept)
         self.assertEqual(scores, [])
 
     def test_other_voice_is_cut_out_of_a_mixed_phrase(self):
@@ -105,6 +105,21 @@ class OwnVoiceOnlyTests(unittest.TestCase):
         spec = np.abs(np.fft.rfft(kept))
         freqs = np.fft.rfftfreq(len(kept), 1.0 / SR)
         self.assertGreater(spec[freqs < 400].sum(), 3 * spec[freqs >= 400].sum())
+
+    def test_my_quiet_or_fast_words_are_not_cut(self):
+        # Scores from the log of a single speaker: «Раз, два, … пять» lost 62%.
+        script = [0.65, 0.51, 0.47, 0.32, 0.36, 0.34, 0.32]
+
+        class Scripted:
+            path = None
+
+            def embed_many(self, clips):
+                return np.stack([np.array([c, math.sqrt(1 - c * c), 0.0], dtype=np.float32) for c in script[: len(clips)]])
+
+        pcm = _tone(6.0, 150)
+        kept, scores = S.own_voice_only(pcm, ME, Scripted(), threshold=0.40)
+        self.assertEqual(len(scores), 7)
+        self.assertIs(kept, pcm)
 
     def test_windows_cover_the_whole_clip(self):
         n = int(4.1 * SR)
@@ -169,11 +184,11 @@ class SpeakerFilterTests(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    def test_without_a_sample_everyone_passes(self):
+    def test_without_a_sample_no_one_passes(self):
         enc = FakeEncoder()
         pcm = _tone(3.0, 1200)
         flt = S.SpeakerFilter(enc)
-        self.assertIs(flt.apply(pcm, threshold=0.4), pcm)
+        self.assertIsNone(flt.apply(pcm, threshold=0.4))
         self.assertEqual(enc.calls, 0)
         self.assertTrue(flt.missing_sample, "the cat must say a sample is missing")
         S.save_voiceprint(ME, quality=1.0, seconds=20, path=self.path)
@@ -195,12 +210,13 @@ class SpeakerFilterTests(unittest.TestCase):
         os.utime(self.path, (1, 2))  # mtime resolution on some file systems
         self.assertIsNotNone(flt.apply(_tone(3.0, 150), threshold=0.4))
 
-    def test_model_failure_never_eats_the_phrase(self):
+    def test_model_failure_blocks_unverified_audio(self):
         S.save_voiceprint(ME, quality=1.0, seconds=20, path=self.path)
         enc = FakeEncoder()
         enc.embed_many = mock.Mock(side_effect=RuntimeError("onnx"))
         pcm = _tone(3.0, 1200)
-        self.assertIs(S.SpeakerFilter(enc).apply(pcm, threshold=0.4), pcm)
+        with self.assertRaisesRegex(RuntimeError, "фраза заблокирована"):
+            S.SpeakerFilter(enc).apply(pcm, threshold=0.4)
 
 
 class ModelDownloadTests(unittest.TestCase):
@@ -268,7 +284,7 @@ class RecordTests(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 S.open_capture(cap, "Headset")
         self.assertIn("не удалось открыть микрофон", str(ctx.exception))
-        self.assertIn(None, [d for d, _ex in cap.tried])
+        self.assertNotIn(None, [d for d, _ex in cap.tried])
 
 
 class ConfigTests(unittest.TestCase):

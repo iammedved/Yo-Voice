@@ -87,6 +87,7 @@ hiddenimports = [
     "yo.loop",
     "yo.paths",
     "yo.phrases",
+    "yo.play",
     "yo.polish",
     "yo.session",
     "yo.settings",

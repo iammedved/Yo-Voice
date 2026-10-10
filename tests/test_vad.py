@@ -39,13 +39,12 @@ class AutoBackendTests(unittest.TestCase):
         self.assertNotIn("start", events)
         self.assertIsNone(trim_to_speech(np.zeros(16000, dtype=np.float32), 16000))
 
-    def test_quiet_voiced_speech_starts(self):
-        self.assertLessEqual(SILERO_START, 0.30)
+    def test_tone_is_not_speech(self):
         gate = SpeechGate()
         quiet = _sine(0.032, amp=0.002)
         events = [gate.process(quiet, 16000) for _ in range(16)]
-        self.assertIn("start", events)
-        self.assertTrue(gate.speaking)
+        self.assertNotIn("start", events)
+        self.assertFalse(gate.speaking)
 
 
 class SileroGateTests(unittest.TestCase):
@@ -74,13 +73,13 @@ class SileroGateTests(unittest.TestCase):
         self.assertFalse(gate.speaking)
         self.assertLess(ends[0] * FRAME / 16000, END_MS / 1000.0 + 0.5)
 
-    def test_sustained_energy_still_starts_without_silero(self):
+    def test_sustained_noise_cannot_override_silero(self):
         gate = self._gate()
         gate._silero.prob = lambda frame: 0.0
         whisper = np.full(FRAME, 0.002, dtype=np.float32)
         events = [gate.process(whisper, 16000) for _ in range(12)]
-        self.assertIn("start", events)
-        self.assertTrue(gate.speaking)
+        self.assertNotIn("start", events)
+        self.assertFalse(gate.speaking)
 
     def test_one_energy_spike_does_not_start(self):
         gate = self._gate()
@@ -152,11 +151,11 @@ class TrimToSpeechTests(unittest.TestCase):
         self.assertIsNotNone(kept)
         self.assertGreater(len(kept), 16000 * 0.4)
 
-    def test_boost_raises_quiet_speech_without_touching_loud(self):
+    def test_detector_does_not_amplify_distant_audio(self):
         quiet = _sine(0.032, amp=0.002)
         loud = _sine(0.032, amp=0.08)
         boosted = boost_for_vad(quiet)
-        self.assertGreater(float(np.sqrt(np.mean(boosted**2))), float(np.sqrt(np.mean(quiet**2))) * 5)
+        np.testing.assert_array_equal(boosted, quiet)
         same = boost_for_vad(loud)
         self.assertLess(abs(float(np.max(np.abs(same))) - float(np.max(np.abs(loud)))), 0.02)
 
@@ -211,3 +210,17 @@ class TrimToSpeechTests(unittest.TestCase):
         body = src[src.index("def _finalize") : src.index("def _finalize_failed")]
         self.assertNotIn('backend="energy"', body)
         self.assertIn("trim_to_speech", body)
+
+
+class QuietestCutTests(unittest.TestCase):
+    def test_long_phrase_is_cut_at_the_breath_not_the_end(self):
+        from yo.vad import quietest_cut
+
+        sr = 16000
+        t = np.arange(sr * 30, dtype=np.float32) / sr
+        pcm = (0.2 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+        breath = int(28.5 * sr)
+        pcm[breath : breath + sr // 5] = 0.0
+        cut = quietest_cut(pcm, sr)
+        self.assertGreaterEqual(cut, breath)
+        self.assertLessEqual(cut, breath + sr // 5)

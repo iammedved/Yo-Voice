@@ -44,6 +44,7 @@ HOP_S = 0.75
 WHOLE_CLIP_S = 2.0
 MIN_SCORED_S = 0.5
 JOIN_GAP_S = 0.2
+IN_PHRASE_MARGIN = 0.15
 ENROLL_CHUNK_S = 3.0
 ENROLL_MIN_SPEECH_S = 8.0
 ENROLL_SECONDS = 25.0
@@ -261,8 +262,11 @@ def load_voiceprint(path: Path | None = None) -> np.ndarray | None:
         return None
     if not isinstance(data, dict) or data.get("model") != MODEL_ID:
         return None
-    vec = np.asarray(data.get("vector") or [], dtype=np.float32)
-    if vec.size == 0 or float(np.linalg.norm(vec)) <= 1e-9:
+    try:
+        vec = np.asarray(data.get("vector") or [], dtype=np.float32)
+    except (TypeError, ValueError):
+        return None
+    if vec.ndim != 1 or vec.size == 0 or not np.all(np.isfinite(vec)) or float(np.linalg.norm(vec)) <= 1e-9:
         return None
     return vec / np.linalg.norm(vec)
 
@@ -305,7 +309,9 @@ def _windows(n: int, sample_rate: int) -> list[tuple[int, int]]:
     return [(s, s + win) for s in starts]
 
 
-def slot_scores(n: int, spans: list[tuple[int, int]], scores: list[float], slot: int) -> list[float]:
+def slot_scores(
+    n: int, spans: list[tuple[int, int]], scores: list[float], slot: int, reduce=None
+) -> list[float]:
     """Score each hop-long slot by the mean of the windows that cover it.
 
     Deciding per slot instead of per window keeps a neighbour's voice from
@@ -315,7 +321,7 @@ def slot_scores(n: int, spans: list[tuple[int, int]], scores: list[float], slot:
     for a in range(0, n, slot):
         b = min(n, a + slot)
         covering = [s for (lo, hi), s in zip(spans, scores) if lo < b and hi > a]
-        out.append(float(np.mean(covering)) if covering else 0.0)
+        out.append(float((reduce or np.mean)(covering)) if covering else 0.0)
     return out
 
 
@@ -336,17 +342,23 @@ def own_voice_only(
         return None, []
     audio = np.asarray(pcm, dtype=np.float32)
     if len(audio) < int(MIN_SCORED_S * sample_rate):
-        # Too short to judge a voice. A lone «да» passes through.
-        return audio, []
+        # Too short to establish identity; do not let brief TV words bypass it.
+        return None, []
     spans = _windows(len(audio), sample_rate)
     embs = encoder.embed_many([audio[a:b] for a, b in spans])
     scores = [cosine(e, voiceprint) for e in embs]
     if len(spans) == 1:
         return (audio if scores[0] >= threshold else None), scores
     slot = int(HOP_S * sample_rate)
-    keep = [s >= threshold for s in slot_scores(len(audio), spans, scores, slot)]
-    if not any(keep):
+    per_slot = slot_scores(len(audio), spans, scores, slot)
+    if not any(s >= threshold for s in per_slot):
         return None, scores
+    # The phrase is mine. My own voice dips to ~0.3 on fast or quiet words,
+    # so inside it a slot stays unless some window over it is clearly
+    # foreign (a TV scores ~0.1).
+    floor = threshold - IN_PHRASE_MARGIN
+    worst = slot_scores(len(audio), spans, scores, slot, reduce=min)
+    keep = [s >= threshold or w >= floor for s, w in zip(per_slot, worst)]
     if all(keep):
         return audio, scores
     pieces: list[np.ndarray] = []
@@ -367,7 +379,7 @@ def own_voice_only(
 
 
 class SpeakerFilter:
-    """What the app calls per phrase. Never blocks dictation on its own failure."""
+    """Only verified speech passes while the user has enabled this filter."""
 
     def __init__(self, encoder: SpeakerEncoder | None = None) -> None:
         self.encoder = encoder or SpeakerEncoder()
@@ -375,7 +387,7 @@ class SpeakerFilter:
         self._print_mtime: float | None = None
         self._print_path: Path | None = None
         self._warned = False
-        # True after a phrase passed unchecked because there is no sample.
+        # True when input is blocked because the sample/model is missing.
         self.missing_sample = False
 
     def _voiceprint(self, path: Path | None = None) -> np.ndarray | None:
@@ -398,15 +410,14 @@ class SpeakerFilter:
         if self.missing_sample:
             if not self._warned:
                 self._warned = True
-                log.warning("«только мой голос» включён, но образец голоса не записан — пропускаю всех")
-            return pcm
+                log.warning("«только мой голос»: нет образца или модели — речь заблокирована")
+            return None
         try:
             kept, scores = own_voice_only(
                 pcm, voiceprint, self.encoder, threshold=threshold, sample_rate=sample_rate
             )
-        except Exception:
-            log.exception("сравнение голоса не удалось — пропускаю фразу как есть")
-            return pcm
+        except Exception as exc:
+            raise RuntimeError("Не удалось проверить голос — фраза заблокирована") from exc
         if scores:
             log.info(
                 "голос: %s порог=%.2f → %s",
@@ -444,7 +455,7 @@ def enroll_from_pcm(
 
 def open_capture(capture, microphone: str = "") -> int | None:
     """Open the dictation mic the way the app does: every host-API copy of
-    the chosen device (WASAPI first), then the system default, shared mode
+    the chosen device (WASAPI first), shared mode
     before exclusive. One driver refusing (WDM-KS) must not stop the sample.
     """
     import sys
@@ -455,7 +466,7 @@ def open_capture(capture, microphone: str = "") -> int | None:
         candidates: list[int | None] = list(capture_candidate_indices(microphone))
     except Exception:
         candidates = []
-    if None not in candidates:
+    if not microphone and None not in candidates:
         candidates.append(None)
     modes = [False, True] if sys.platform == "win32" else [False]
     first_error: Exception | None = None

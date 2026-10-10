@@ -1,4 +1,4 @@
-"""Сессия диктовки: слушает, отдаёт фразы в активное поле."""
+"""Сессия диктовки: слушает, копит фразы и отдаёт их в активное поле по второму нажатию."""
 
 from __future__ import annotations
 
@@ -120,16 +120,30 @@ def _dedupe_variants(words: list[str]) -> list[str]:
 
 
 class DictationSession:
+    """Фразы копятся, пока идёт запись; в поле уходят одним куском по flush()."""
+
     def __init__(self, inject: InjectFn) -> None:
         self._inject = inject
         self.listening = False
-        self._first_inject = True
+        self._held: list[str] = []
         self.task = "transcribe"
 
     def start(self, task: str = "transcribe") -> None:
         self.listening = True
-        self._first_inject = True
+        self._held = []
         self.set_task(task)
+
+    @property
+    def held_text(self) -> str:
+        return " ".join(self._held)
+
+    def flush(self) -> str:
+        """Вставить всё сказанное за запись одним куском (повторное нажатие)."""
+        text = self.held_text
+        self._held = []
+        if text:
+            self._inject(text)
+        return text
 
     def set_task(self, task: str) -> None:
         self.task = "translate" if task == "translate" else "transcribe"
@@ -150,7 +164,5 @@ class DictationSession:
         if not words:
             return ""
         text = " ".join(words)
-        payload = text if self._first_inject else f" {text}"
-        self._first_inject = False
-        self._inject(payload)
-        return payload
+        self._held.append(text)
+        return text

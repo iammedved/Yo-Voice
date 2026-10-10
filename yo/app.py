@@ -44,6 +44,7 @@ from yo.loop import clipboard_get, clipboard_set, idle_add, loop_init, loop_main
 from yo.mt import LocalTranslator, english_from_russian_asr
 from yo.overlay import Overlay
 from yo.phrases import UNRECOGNIZED
+from yo.play import foreground_holds_dictation, set_game_hold
 from yo.session import (
     DictationSession,
     accept_asr_commit,
@@ -52,7 +53,7 @@ from yo.session import (
 )
 from yo.speaker import NO_SAMPLE_HINT, SpeakerFilter
 from yo.spectrum import SAMPLE_RATE
-from yo.vad import SpeechGate, trim_to_speech
+from yo.vad import SpeechGate, quietest_cut, trim_to_speech
 
 log = logging.getLogger("yo.app")
 HOTKEY_BUSY_HINT = "клавиша ё занята"
@@ -81,6 +82,7 @@ class YoApp:
         self._token = 0
         self._utt = 0
         self._stopping = False
+        self._in_game = False
         self._hotkey: HotkeyWatcher | None = None
         self._rebinding = False
         self._rebind_target = "transcribe"
@@ -112,10 +114,13 @@ class YoApp:
         threading.Thread(target=self._preload_models, daemon=True, name="yo-asr-load").start()
         self._ipc = IpcServer(self._on_ipc)
         self._ipc.start()
+        if sys.platform == "win32":
+            self._sync_game_hold()
         self._restart_hotkey()
         if sys.platform == "win32":
             self._start_tray()
             timeout_add(400, self._track_paste_target)
+            timeout_add(400, self._watch_game)
         from yo.logutil import DICTATION_LOG_CHECK_MS
 
         timeout_add(DICTATION_LOG_CHECK_MS, self._expire_dictation_log)
@@ -131,6 +136,48 @@ class YoApp:
             log.debug("не удалось проверить срок журнала", exc_info=True)
         timeout_add(DICTATION_LOG_CHECK_MS, self._expire_dictation_log)
         return False
+
+    def _sync_game_hold(self) -> bool:
+        """Пока игра на экране, не включать микрофон и не забирать её кнопку."""
+        if sys.platform != "win32":
+            return False
+        try:
+            holding = foreground_holds_dictation()
+        except Exception:
+            log.debug("не удалось проверить игру", exc_info=True)
+            holding = False
+        set_game_hold(holding)
+        if holding and not self._in_game:
+            self._in_game = True
+            log.info("игра на экране, диктовка не включается")
+            if self.session.listening or self._stopping:
+                self._drop_listen()
+        elif self._in_game and not holding:
+            self._in_game = False
+            log.info("игра ушла с экрана, диктовку снова можно включить")
+        return holding
+
+    def _watch_game(self) -> bool:
+        self._sync_game_hold()
+        timeout_add(400, self._watch_game)
+        return False
+
+    def _drop_listen(self) -> None:
+        """Выйти из прослушивания без распознавания и без вставки в игру."""
+        self._token += 1
+        self._stopping = False
+        self._stop_mic_poll()
+        try:
+            self.audio.stop(drain=False)
+        except Exception:
+            log.debug("микрофон не закрылся", exc_info=True)
+        with self._chunks_lock:
+            self._chunks = []
+        self.session.stop()
+        try:
+            self.overlay.hide()
+        except Exception:
+            log.debug("оверлей не спрятался", exc_info=True)
 
     def _preload_models(self) -> None:
         try:
@@ -177,6 +224,8 @@ class YoApp:
     def start_listen(self, task: str = "transcribe") -> bool:
         self._cancel_rebind()
         if self.session.listening or self._stopping:
+            return False
+        if self._sync_game_hold():
             return False
         self._token += 1
         self.session.start(task=task)
@@ -227,6 +276,9 @@ class YoApp:
             return False
         self._stopping = True
         self._stop_mic_poll()
+        # Вставка идёт туда, где курсор в момент второго нажатия,
+        # а не туда, где он был, когда запись началась.
+        self._snapshot_paste_target()
         timeout_add(STOP_TAIL_MS, self._finish_stop, self._token)
         return False
 
@@ -401,12 +453,32 @@ class YoApp:
         if self._stopping or not self.session.listening:
             return
         event = self.vad.process(pcm, self.config.sample_rate)
+        if event == "silence" and not self.vad.speaking:
+            # Keep only pre-roll while idle, not minutes of room noise.
+            with self._chunks_lock:
+                remaining = int(self.config.sample_rate * 0.4)
+                kept = []
+                for chunk in reversed(self._chunks):
+                    if remaining <= 0:
+                        break
+                    kept.append(chunk[-remaining:])
+                    remaining -= len(kept[-1])
+                self._chunks = list(reversed(kept))
         if event == "start":
             self._utt += 1
-        if event == "end":
+        with self._chunks_lock:
+            full = sum(len(chunk) for chunk in self._chunks) >= self.config.sample_rate * 30
+        if event == "end" or full:
             audio = self._take_chunks()
             utt = self._utt
-            if audio is not None:
+            if audio is not None and full and event != "end":
+                # Long speech without a pause: cut at a breath, not mid-word,
+                # and keep the rest for the next piece.
+                cut = quietest_cut(audio, self.config.sample_rate)
+                with self._chunks_lock:
+                    self._chunks.insert(0, audio[cut:])
+                audio = audio[:cut]
+            if audio is not None and len(audio):
                 self._jobs.put((audio, False, self._token, utt, self.session.task))
             return
 
@@ -504,6 +576,8 @@ class YoApp:
     def _finalize_failed(self, message: str, hide_after: bool, token: int) -> bool:
         self.overlay.set_status(f"ошибка: {message}")
         if hide_after and token == self._token:
+            # Последний кусок не распознался — уже сказанное всё равно вставляем.
+            self.session.flush()
             self.session.stop()
             self._stopping = False
             timeout_add(900, self._hide)
@@ -534,7 +608,8 @@ class YoApp:
             raw = ""
         text = self.session.commit_utterance(raw, task=task) if raw else ""
         if text:
-            self.overlay.set_preview(text.strip())
+            # Пока запись идёт, ничего не вставляем — только показываем на коте.
+            self.overlay.set_preview(self.session.held_text)
         else:
             feedback = empty_speech_feedback(
                 speech_seconds=speech_seconds,
@@ -546,10 +621,11 @@ class YoApp:
                 if not hide_after:
                     timeout_add(1400, self._clear_unrecognized)
         if hide_after:
+            pasted = self.session.flush()
             self.session.stop()
             self._stopping = False
             self.overlay.set_live(False)
-            timeout_add(900 if not text else 220, self._hide)
+            timeout_add(900 if not pasted else 220, self._hide)
         return False
 
     def _show_no_sample(self) -> bool:

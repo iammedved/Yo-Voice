@@ -1,4 +1,4 @@
-"""Потоковый VAD: Silero ONNX, запасной EnergyVad. В Whisper только речь."""
+"""Silero speech detection; energy-only mode is explicit, never a fallback."""
 
 from __future__ import annotations
 
@@ -18,15 +18,10 @@ CONTEXT = 64
 SAMPLE_RATE = 16000
 START_MS = 40.0
 END_MS = 1100.0
-# Silero probability drops with amplitude; 0.45 only fires on loud/normal talk.
-SILERO_START = 0.28
-SILERO_CONTINUE = 0.16
+SILERO_START = 0.50
+SILERO_CONTINUE = 0.35
+MIN_SPEECH_RMS = 0.0007
 ENERGY_FRAME_THRESH = 0.00035
-ENERGY_ASSIST = 0.0007
-# One 32 ms click is louder than ENERGY_ASSIST. It must not zero the endpoint.
-ENERGY_ASSIST_HOLD_MS = 128.0
-VAD_TARGET_RMS = 0.04
-VAD_MAX_GAIN = 20.0
 # Bridge a short breath; do not keep the minute between two clicks.
 GAP_BRIDGE_FRAMES = 6
 MIN_ISLAND_FRAMES = 3
@@ -109,7 +104,7 @@ def _silero_session():
         )
         return _SESSION
     except Exception:
-        log.warning("Silero VAD не загрузился, беру EnergyVad", exc_info=True)
+        log.warning("Silero VAD не загрузился", exc_info=True)
         _SESSION = False
         return None
 
@@ -147,13 +142,8 @@ class SileroBackend:
 
 
 def boost_for_vad(frame: np.ndarray) -> np.ndarray:
-    """Raise quiet speech to a level Silero can score; stored PCM is unchanged."""
-    pcm = np.asarray(frame, dtype=np.float32)
-    level = rms(pcm)
-    if level <= 1e-8 or level >= VAD_TARGET_RMS:
-        return pcm
-    gain = min(VAD_MAX_GAIN, VAD_TARGET_RMS / level)
-    return np.clip(pcm * gain, -1.0, 1.0).astype(np.float32)
+    """Keep microphone level: distant audio must not be promoted to speech."""
+    return np.asarray(frame, dtype=np.float32)
 
 
 def _try_silero() -> SileroBackend | None:
@@ -162,7 +152,7 @@ def _try_silero() -> SileroBackend | None:
     try:
         return SileroBackend()
     except Exception:
-        log.warning("Silero VAD не загрузился, беру EnergyVad", exc_info=True)
+        log.warning("Silero VAD не загрузился", exc_info=True)
         return None
 
 
@@ -175,7 +165,9 @@ class SpeechGate:
             self._backend = "energy"
         else:
             self._silero = _try_silero()
-            self._backend = "silero" if self._silero is not None else "energy"
+            if self._silero is None:
+                raise RuntimeError("Не загрузился фильтр речи Silero — восстановите установку Ёхо")
+            self._backend = "silero"
         self.speaking = False
         self._speech_ms = 0.0
         self._silence_ms = 0.0
@@ -220,12 +212,9 @@ class SpeechGate:
         dt_ms = 1000.0 * FRAME / float(SAMPLE_RATE)
         prob = self._silero.prob(boost_for_vad(frame))
         thresh = SILERO_CONTINUE if self.speaking else SILERO_START
-        if prob >= thresh:
+        if prob >= thresh and rms(frame) >= MIN_SPEECH_RMS:
             self._energy_ms = 0.0
             is_speech = True
-        elif rms(frame) > ENERGY_ASSIST:
-            self._energy_ms += dt_ms
-            is_speech = self._energy_ms >= ENERGY_ASSIST_HOLD_MS
         else:
             self._energy_ms = 0.0
             is_speech = False
@@ -285,13 +274,6 @@ def _speech_islands(mask: list[bool], min_frames: int) -> list[tuple[int, int]]:
     return islands
 
 
-def _or_masks(left: list[bool], right: list[bool]) -> list[bool]:
-    n = min(len(left), len(right))
-    if n == 0:
-        return left or right
-    return [left[i] or right[i] for i in range(n)]
-
-
 def _energy_mask(pcm: np.ndarray, sample_rate: int, frame: int = FRAME) -> list[bool]:
     mask: list[bool] = []
     for i in range(0, len(pcm), frame):
@@ -312,7 +294,7 @@ def _silero_mask(pcm: np.ndarray, backend: SileroBackend, frame: int = FRAME) ->
             chunk = np.pad(chunk, (0, frame - len(chunk)))
         prob = backend.prob(boost_for_vad(chunk))
         thresh = SILERO_CONTINUE if speaking else SILERO_START
-        speaking = prob >= thresh
+        speaking = prob >= thresh and rms(chunk) >= MIN_SPEECH_RMS
         mask.append(speaking)
     return mask
 
@@ -326,17 +308,18 @@ def trim_to_speech(
     if pcm is None or len(pcm) < int(sample_rate * 0.12):
         return None
     audio = np.asarray(pcm, dtype=np.float32)
+    if audio.ndim != 1 or not np.all(np.isfinite(audio)):
+        return None
     requested = backend or "auto"
     mask: list[bool]
-    energy = _energy_mask(audio, sample_rate)
     if requested != "energy":
         silero = _try_silero()
         if silero is not None:
-            mask = _or_masks(_silero_mask(audio, silero), energy)
+            mask = _silero_mask(audio, silero)
         else:
-            mask = energy
+            raise RuntimeError("Не загрузился фильтр речи Silero — восстановите установку Ёхо")
     else:
-        mask = energy
+        mask = _energy_mask(audio, sample_rate)
     if not any(mask):
         return None
     islands = _speech_islands(_bridge_short_gaps(mask, GAP_BRIDGE_FRAMES), MIN_ISLAND_FRAMES)
@@ -378,3 +361,20 @@ def trim_to_speech(
     if len(kept) < int(sample_rate * 0.12):
         return None
     return kept
+
+
+def quietest_cut(pcm: np.ndarray, sample_rate: int, search_s: float = 3.0, frame_s: float = 0.05) -> int:
+    """Where to split a too-long phrase: the quietest moment near its end.
+
+    Cutting at a fixed 30 s mark splits a word in half and both halves get
+    misheard; a breath in the last few seconds is a clean place to cut.
+    """
+    n = len(pcm)
+    frame = max(1, int(frame_s * sample_rate))
+    lo = max(0, n - int(search_s * sample_rate))
+    best, best_rms = n, None
+    for a in range(lo, n - frame + 1, frame):
+        level = rms(pcm[a : a + frame])
+        if best_rms is None or level < best_rms:
+            best, best_rms = a + frame // 2, level
+    return best
