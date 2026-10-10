@@ -276,6 +276,9 @@ class YoApp:
             return False
         self._stopping = True
         self._stop_mic_poll()
+        # Вставка идёт туда, где курсор в момент второго нажатия,
+        # а не туда, где он был, когда запись началась.
+        self._snapshot_paste_target()
         timeout_add(STOP_TAIL_MS, self._finish_stop, self._token)
         return False
 
@@ -566,6 +569,8 @@ class YoApp:
     def _finalize_failed(self, message: str, hide_after: bool, token: int) -> bool:
         self.overlay.set_status(f"ошибка: {message}")
         if hide_after and token == self._token:
+            # Последний кусок не распознался — уже сказанное всё равно вставляем.
+            self.session.flush()
             self.session.stop()
             self._stopping = False
             timeout_add(900, self._hide)
@@ -596,7 +601,8 @@ class YoApp:
             raw = ""
         text = self.session.commit_utterance(raw, task=task) if raw else ""
         if text:
-            self.overlay.set_preview(text.strip())
+            # Пока запись идёт, ничего не вставляем — только показываем на коте.
+            self.overlay.set_preview(self.session.held_text)
         else:
             feedback = empty_speech_feedback(
                 speech_seconds=speech_seconds,
@@ -608,10 +614,11 @@ class YoApp:
                 if not hide_after:
                     timeout_add(1400, self._clear_unrecognized)
         if hide_after:
+            pasted = self.session.flush()
             self.session.stop()
             self._stopping = False
             self.overlay.set_live(False)
-            timeout_add(900 if not text else 220, self._hide)
+            timeout_add(900 if not pasted else 220, self._hide)
         return False
 
     def _show_no_sample(self) -> bool:

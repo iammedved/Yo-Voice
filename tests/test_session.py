@@ -19,18 +19,35 @@ class DictationSessionTests(unittest.TestCase):
         self.session.start()
         text = self.session.commit_utterance("я отправил письмо")
         self.assertEqual(text, "Я отправил письмо.")
+        self.assertEqual(self.injected, [])
+        self.assertEqual(self.session.flush(), "Я отправил письмо.")
         self.assertEqual(self.injected, ["Я отправил письмо."])
 
-    def test_next_utterance_is_separated_by_space(self):
+    def test_phrases_wait_for_second_press_and_paste_once(self):
         self.session.start()
         self.session.commit_utterance("привет")
         self.session.commit_utterance("как дела")
-        self.assertEqual(self.injected, ["Привет.", " Как дела?"])
+        self.assertEqual(self.injected, [])
+        self.assertEqual(self.session.held_text, "Привет. Как дела?")
+        self.session.flush()
+        self.assertEqual(self.injected, ["Привет. Как дела?"])
+
+    def test_flush_with_nothing_said_pastes_nothing(self):
+        self.session.start()
+        self.assertEqual(self.session.flush(), "")
+        self.assertEqual(self.injected, [])
+
+    def test_new_recording_drops_unflushed_phrases(self):
+        self.session.start()
+        self.session.commit_utterance("привет")
+        self.session.start()
+        self.assertEqual(self.session.flush(), "")
 
     def test_empty_and_hallucination_are_not_injected(self):
         self.session.start()
         self.assertEqual(self.session.commit_utterance("   "), "")
         self.assertEqual(self.session.commit_utterance("Продолжение следует"), "")
+        self.session.flush()
         self.assertEqual(self.injected, [])
 
     def test_stop_does_not_listen(self):

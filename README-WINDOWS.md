@@ -1,6 +1,6 @@
 # Yo-Voice (Ёхо) on Windows
 
-Local Russian dictation for 64-bit Windows 10 or 11. Press the hotkey **once**, speak, pause — the transcript is pasted into the focused text field. Press the same control again to stop. Releasing the key does not stop or paste. Audio never leaves this machine.
+Local Russian dictation for 64-bit Windows 10 or 11. Press the hotkey **once** and speak, pauses included. Press the same control again: the whole transcript is pasted into the field that has focus at that moment. Releasing the key does not stop or paste. Audio never leaves this machine.
 
 The same program on Linux is in [README.md](README.md). Linux needs X11. Windows does not use that path.
 
@@ -52,7 +52,7 @@ Right-click the cat → **Назначить кнопку** to rebind the toggle
 1. Start Ёхо from the shortcut, or tick logon start and sign in again.
 2. Press **ё**. The cat shows **Жду**, then **Можно говорить**, then **Слушаю**.
 3. If the speech model was not downloaded during Setup and is not already on disk, the first start shows the same 1–100% window, then starts the program again after a new download.
-4. Speak and pause. Text is pasted into the focused field.
+4. Speak (pauses are fine), then press the hotkey again. Text is pasted into the focused field.
 
 ## Only my voice
 

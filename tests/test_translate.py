@@ -187,6 +187,7 @@ class TranslateSessionTests(unittest.TestCase):
         self.session.start(task="translate")
         text = self.session.commit_utterance("send this tomorrow")
         self.assertEqual(text, "Send this tomorrow.")
+        self.session.flush()
         self.assertEqual(self.injected, ["Send this tomorrow."])
 
     def test_switch_task_keeps_listening(self):
