@@ -102,17 +102,17 @@ class PreparePcmTests(unittest.TestCase):
         self.assertIsNotNone(out)
         self.assertGreater(float(np.sqrt(np.mean(out**2))), 0.02)
 
-    def test_very_quiet_speech_is_boosted_for_whisper(self):
+    def test_quiet_audio_gain_is_bounded(self):
         quiet = (0.0025 * np.sin(np.linspace(0, 80, 16000))).astype(np.float32)
         out = prepare_pcm(quiet, 16000)
         self.assertIsNotNone(out)
-        self.assertGreater(float(np.sqrt(np.mean(out**2))), 0.03)
+        self.assertLessEqual(float(np.sqrt(np.mean(out**2))), 4.01 * float(np.std(quiet)))
 
-    def test_whisper_level_speech_is_kept_and_boosted(self):
+    def test_faint_audio_is_not_normalized_to_loud_speech(self):
         quiet = (0.0008 * np.sin(np.linspace(0, 80, 16000))).astype(np.float32)
         out = prepare_pcm(quiet, 16000)
         self.assertIsNotNone(out)
-        self.assertGreater(float(np.sqrt(np.mean(out**2))), 0.02)
+        self.assertLessEqual(float(np.sqrt(np.mean(out**2))), 4.01 * float(np.std(quiet)))
 
     def test_already_loud_speech_is_not_clipped_into_noise(self):
         loud = (0.3 * np.sin(np.linspace(0, 80, 16000))).astype(np.float32)

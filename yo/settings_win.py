@@ -281,7 +281,7 @@ def run_settings_window(
 
     def _voice_label() -> None:
         if not has_voiceprint():
-            voice_var.set("Образец голоса не записан — без него слушаю всех.")
+            voice_var.set("Образец не записан — режим «только мой голос» блокирует ввод.")
         elif voice_on.get():
             voice_var.set("Слушаю только ваш голос, чужие голоса отрезаю.")
         else:

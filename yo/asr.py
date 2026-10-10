@@ -28,7 +28,7 @@ TRANSCRIBE_OPTIONS = {
     "vad_filter": False,
     "condition_on_previous_text": False,
     "without_timestamps": True,
-    "no_speech_threshold": 0.72,
+    "no_speech_threshold": 0.60,
     "log_prob_threshold": -1.0,
     "compression_ratio_threshold": 2.4,
     "temperature": 0.0,
@@ -85,12 +85,14 @@ def prepare_pcm(
     if audio is None or len(audio) < int(sample_rate * min_seconds):
         return None
     pcm = np.asarray(audio, dtype=np.float32)
+    if pcm.ndim != 1 or not np.all(np.isfinite(pcm)):
+        return None
     pcm = pcm - float(np.mean(pcm))
     level = float(np.sqrt(np.mean(np.square(pcm)))) if len(pcm) else 0.0
     if level < min_level:
         return None
     if level < 0.05:
-        pcm = pcm * min(40.0, 0.05 / max(level, 1e-6))
+        pcm = pcm * min(4.0, 0.05 / max(level, 1e-6))
     peak = float(np.max(np.abs(pcm))) if len(pcm) else 0.0
     if peak > 0.99:
         pcm = pcm / peak * 0.99
@@ -189,11 +191,11 @@ def keep_segment(seg) -> bool:
     nsp = float(getattr(seg, "no_speech_prob", 0.0) or 0.0)
     logp = float(getattr(seg, "avg_logprob", 0.0) or 0.0)
     ratio = float(getattr(seg, "compression_ratio", 1.0) or 1.0)
-    if nsp > 0.88:
+    if not all(np.isfinite(v) for v in (nsp, logp, ratio)):
         return False
-    if nsp > 0.7 and logp < -0.6:
+    if nsp > 0.60:
         return False
-    if logp < -1.2:
+    if logp < -1.0:
         return False
     if ratio > 2.4:
         return False

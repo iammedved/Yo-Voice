@@ -1,8 +1,16 @@
 # Changelog
 
+## Local hotfix — 2026-10-06
+
+- Removed automatic amplification before Silero and loudness-based bypasses that admitted room noise. Capped ASR gain at 4× and tightened non-speech confidence rejection.
+- Enrolled-voice mode blocks unverified short clips, missing samples/models and comparison failures instead of passing other voices through.
+- Kept selected microphones fixed when absent or silent; fixed the sample rate used by the first capture callback.
+- Limited idle audio to 0.4 seconds and continuous recognition chunks to approximately 30 seconds.
+- Added audio regression coverage; isolated an existing report-import test from other tests' GUI imports.
+
 ## Unreleased
 
-- **Слушать только мой голос**: record a 25-second sample of your voice once (settings → **Записать мой голос**, or `yo-voice enroll`), and other voices are cut out before recognition. A local 26 MB speaker model (WeSpeaker ResNet34, ONNX) compares every 1.5 s of a phrase with your voiceprint. Off until you record a sample; a missing model or sample never blocks dictation.
+- **Слушать только мой голос**: record a 25-second sample of your voice once (settings → **Записать мой голос**, or `yo-voice enroll`), and other voices are cut out before recognition. A local 26 MB speaker model (WeSpeaker ResNet34, ONNX) compares every 1.5 s of a phrase with your voiceprint. Off until you record a sample; when enabled, a missing model or sample blocks unverified input.
 - A settings file that cannot be read is left on disk. Ёхо uses the usual defaults only in memory until that file can be read again. A missing settings file is still created. A finished save writes a temporary file in the same folder and replaces the real file only after that write completes, so a crash in the middle does not leave a half-written settings file.
 - Cleanup after recognition no longer rewrites four real phrases: «и слушая», «у тора», «у сорта», and «громко и тонко». «громко четко» still becomes «громко и чётко», «находятся сорта» still becomes «находится у рта», and «стоит монитора» still becomes «стоит у монитора».
 - A pause inside one phrase is not sent back to recognition. The short margin stays only before the first speech and after the last.
@@ -12,7 +20,7 @@
 - Recognized lines in the local log are deleted 6 hours after that file's first line. While the program is running the check is about once a minute. If it is quit, the file stays until the next start, which deletes an already-expired journal before writing. The next line creates the new file. No WAV archive. Settings and downloaded models are not deleted with the log. Same rule on Linux and Windows.
 - Listening is a toggle on Linux and Windows: one press starts, the next stops, and releasing the key does not paste. A pause while still listening inserts the phrase.
 - Linux dictation still restores the previous clipboard. Windows leaves the pasted text on the clipboard. Translate on both leaves the English text on the clipboard.
-- Capture accepts close-mic whisper: Silero sees a boosted copy, energy VAD no longer raises the gate into shout range, and overlay waves move on quiet speech
+- Capture uses the original microphone level for Silero; overlay waves still move on quiet speech. The local hotfix below supersedes the previous amplified detection.
 - After you stop the toggle, the mic keeps the last ~300 ms and one extra buffer so the final word is not cut
 - Silero trims the clip for Whisper instead of a second energy gate; quiet endings stay
 - Brand names (Ёхо, Grok, ChatGPT, …) are rewritten after recognition in `terms.py`; they are not fed to Whisper as hotwords

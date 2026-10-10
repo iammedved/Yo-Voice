@@ -88,10 +88,10 @@ class OwnVoiceOnlyTests(unittest.TestCase):
         self.assertIsNone(kept)
         self.assertEqual(len(scores), 1)
 
-    def test_very_short_phrase_passes_unjudged(self):
+    def test_very_short_phrase_cannot_bypass_identity(self):
         pcm = _tone(0.3, 1200)
         kept, scores = S.own_voice_only(pcm, ME, FakeEncoder())
-        self.assertIs(kept, pcm)
+        self.assertIsNone(kept)
         self.assertEqual(scores, [])
 
     def test_other_voice_is_cut_out_of_a_mixed_phrase(self):
@@ -169,11 +169,11 @@ class SpeakerFilterTests(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    def test_without_a_sample_everyone_passes(self):
+    def test_without_a_sample_no_one_passes(self):
         enc = FakeEncoder()
         pcm = _tone(3.0, 1200)
         flt = S.SpeakerFilter(enc)
-        self.assertIs(flt.apply(pcm, threshold=0.4), pcm)
+        self.assertIsNone(flt.apply(pcm, threshold=0.4))
         self.assertEqual(enc.calls, 0)
         self.assertTrue(flt.missing_sample, "the cat must say a sample is missing")
         S.save_voiceprint(ME, quality=1.0, seconds=20, path=self.path)
@@ -195,12 +195,13 @@ class SpeakerFilterTests(unittest.TestCase):
         os.utime(self.path, (1, 2))  # mtime resolution on some file systems
         self.assertIsNotNone(flt.apply(_tone(3.0, 150), threshold=0.4))
 
-    def test_model_failure_never_eats_the_phrase(self):
+    def test_model_failure_blocks_unverified_audio(self):
         S.save_voiceprint(ME, quality=1.0, seconds=20, path=self.path)
         enc = FakeEncoder()
         enc.embed_many = mock.Mock(side_effect=RuntimeError("onnx"))
         pcm = _tone(3.0, 1200)
-        self.assertIs(S.SpeakerFilter(enc).apply(pcm, threshold=0.4), pcm)
+        with self.assertRaisesRegex(RuntimeError, "фраза заблокирована"):
+            S.SpeakerFilter(enc).apply(pcm, threshold=0.4)
 
 
 class ModelDownloadTests(unittest.TestCase):
@@ -268,7 +269,7 @@ class RecordTests(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 S.open_capture(cap, "Headset")
         self.assertIn("не удалось открыть микрофон", str(ctx.exception))
-        self.assertIn(None, [d for d, _ex in cap.tried])
+        self.assertNotIn(None, [d for d, _ex in cap.tried])
 
 
 class ConfigTests(unittest.TestCase):
