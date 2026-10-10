@@ -10,6 +10,8 @@
 
 ## Unreleased
 
+- «Only my voice» no longer cuts your own fast or quiet words out of a phrase. Once a phrase is recognized as yours, only clearly foreign parts are removed; before, about 12% of the user's own speech was dropped, up to 60% on short phrases.
+- A phrase longer than 30 seconds without a pause is split at the quietest moment of its last 3 seconds instead of in the middle of a word.
 - **Слушать только мой голос**: record a 25-second sample of your voice once (settings → **Записать мой голос**, or `yo-voice enroll`), and other voices are cut out before recognition. A local 26 MB speaker model (WeSpeaker ResNet34, ONNX) compares every 1.5 s of a phrase with your voiceprint. Off until you record a sample; when enabled, a missing model or sample blocks unverified input.
 - A settings file that cannot be read is left on disk. Ёхо uses the usual defaults only in memory until that file can be read again. A missing settings file is still created. A finished save writes a temporary file in the same folder and replaces the real file only after that write completes, so a crash in the middle does not leave a half-written settings file.
 - Cleanup after recognition no longer rewrites four real phrases: «и слушая», «у тора», «у сорта», and «громко и тонко». «громко четко» still becomes «громко и чётко», «находятся сорта» still becomes «находится у рта», and «стоит монитора» still becomes «стоит у монитора».

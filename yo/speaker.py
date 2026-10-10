@@ -44,6 +44,7 @@ HOP_S = 0.75
 WHOLE_CLIP_S = 2.0
 MIN_SCORED_S = 0.5
 JOIN_GAP_S = 0.2
+IN_PHRASE_MARGIN = 0.15
 ENROLL_CHUNK_S = 3.0
 ENROLL_MIN_SPEECH_S = 8.0
 ENROLL_SECONDS = 25.0
@@ -308,7 +309,9 @@ def _windows(n: int, sample_rate: int) -> list[tuple[int, int]]:
     return [(s, s + win) for s in starts]
 
 
-def slot_scores(n: int, spans: list[tuple[int, int]], scores: list[float], slot: int) -> list[float]:
+def slot_scores(
+    n: int, spans: list[tuple[int, int]], scores: list[float], slot: int, reduce=None
+) -> list[float]:
     """Score each hop-long slot by the mean of the windows that cover it.
 
     Deciding per slot instead of per window keeps a neighbour's voice from
@@ -318,7 +321,7 @@ def slot_scores(n: int, spans: list[tuple[int, int]], scores: list[float], slot:
     for a in range(0, n, slot):
         b = min(n, a + slot)
         covering = [s for (lo, hi), s in zip(spans, scores) if lo < b and hi > a]
-        out.append(float(np.mean(covering)) if covering else 0.0)
+        out.append(float((reduce or np.mean)(covering)) if covering else 0.0)
     return out
 
 
@@ -347,9 +350,15 @@ def own_voice_only(
     if len(spans) == 1:
         return (audio if scores[0] >= threshold else None), scores
     slot = int(HOP_S * sample_rate)
-    keep = [s >= threshold for s in slot_scores(len(audio), spans, scores, slot)]
-    if not any(keep):
+    per_slot = slot_scores(len(audio), spans, scores, slot)
+    if not any(s >= threshold for s in per_slot):
         return None, scores
+    # The phrase is mine. My own voice dips to ~0.3 on fast or quiet words,
+    # so inside it a slot stays unless some window over it is clearly
+    # foreign (a TV scores ~0.1).
+    floor = threshold - IN_PHRASE_MARGIN
+    worst = slot_scores(len(audio), spans, scores, slot, reduce=min)
+    keep = [s >= threshold or w >= floor for s, w in zip(per_slot, worst)]
     if all(keep):
         return audio, scores
     pieces: list[np.ndarray] = []

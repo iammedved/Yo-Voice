@@ -210,3 +210,17 @@ class TrimToSpeechTests(unittest.TestCase):
         body = src[src.index("def _finalize") : src.index("def _finalize_failed")]
         self.assertNotIn('backend="energy"', body)
         self.assertIn("trim_to_speech", body)
+
+
+class QuietestCutTests(unittest.TestCase):
+    def test_long_phrase_is_cut_at_the_breath_not_the_end(self):
+        from yo.vad import quietest_cut
+
+        sr = 16000
+        t = np.arange(sr * 30, dtype=np.float32) / sr
+        pcm = (0.2 * np.sin(2 * np.pi * 200 * t)).astype(np.float32)
+        breath = int(28.5 * sr)
+        pcm[breath : breath + sr // 5] = 0.0
+        cut = quietest_cut(pcm, sr)
+        self.assertGreaterEqual(cut, breath)
+        self.assertLessEqual(cut, breath + sr // 5)

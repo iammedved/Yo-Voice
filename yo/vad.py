@@ -361,3 +361,20 @@ def trim_to_speech(
     if len(kept) < int(sample_rate * 0.12):
         return None
     return kept
+
+
+def quietest_cut(pcm: np.ndarray, sample_rate: int, search_s: float = 3.0, frame_s: float = 0.05) -> int:
+    """Where to split a too-long phrase: the quietest moment near its end.
+
+    Cutting at a fixed 30 s mark splits a word in half and both halves get
+    misheard; a breath in the last few seconds is a clean place to cut.
+    """
+    n = len(pcm)
+    frame = max(1, int(frame_s * sample_rate))
+    lo = max(0, n - int(search_s * sample_rate))
+    best, best_rms = n, None
+    for a in range(lo, n - frame + 1, frame):
+        level = rms(pcm[a : a + frame])
+        if best_rms is None or level < best_rms:
+            best, best_rms = a + frame // 2, level
+    return best

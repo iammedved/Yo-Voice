@@ -106,6 +106,21 @@ class OwnVoiceOnlyTests(unittest.TestCase):
         freqs = np.fft.rfftfreq(len(kept), 1.0 / SR)
         self.assertGreater(spec[freqs < 400].sum(), 3 * spec[freqs >= 400].sum())
 
+    def test_my_quiet_or_fast_words_are_not_cut(self):
+        # Scores from the log of a single speaker: «Раз, два, … пять» lost 62%.
+        script = [0.65, 0.51, 0.47, 0.32, 0.36, 0.34, 0.32]
+
+        class Scripted:
+            path = None
+
+            def embed_many(self, clips):
+                return np.stack([np.array([c, math.sqrt(1 - c * c), 0.0], dtype=np.float32) for c in script[: len(clips)]])
+
+        pcm = _tone(6.0, 150)
+        kept, scores = S.own_voice_only(pcm, ME, Scripted(), threshold=0.40)
+        self.assertEqual(len(scores), 7)
+        self.assertIs(kept, pcm)
+
     def test_windows_cover_the_whole_clip(self):
         n = int(4.1 * SR)
         spans = S._windows(n, SR)

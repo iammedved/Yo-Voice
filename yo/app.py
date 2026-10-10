@@ -53,7 +53,7 @@ from yo.session import (
 )
 from yo.speaker import NO_SAMPLE_HINT, SpeakerFilter
 from yo.spectrum import SAMPLE_RATE
-from yo.vad import SpeechGate, trim_to_speech
+from yo.vad import SpeechGate, quietest_cut, trim_to_speech
 
 log = logging.getLogger("yo.app")
 HOTKEY_BUSY_HINT = "клавиша ё занята"
@@ -471,7 +471,14 @@ class YoApp:
         if event == "end" or full:
             audio = self._take_chunks()
             utt = self._utt
-            if audio is not None:
+            if audio is not None and full and event != "end":
+                # Long speech without a pause: cut at a breath, not mid-word,
+                # and keep the rest for the next piece.
+                cut = quietest_cut(audio, self.config.sample_rate)
+                with self._chunks_lock:
+                    self._chunks.insert(0, audio[cut:])
+                audio = audio[:cut]
+            if audio is not None and len(audio):
                 self._jobs.put((audio, False, self._token, utt, self.session.task))
             return
 
