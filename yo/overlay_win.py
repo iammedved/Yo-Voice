@@ -1,4 +1,4 @@
-"""Бесфокусный overlay: логотип ЙО и волны, без рамки (tkinter / Windows)."""
+"""Бесфокусный overlay: кассета Ёхо и эквалайзер, без рамки (tkinter / Windows)."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from ctypes import wintypes
 from types import SimpleNamespace
 
 from yo.capture import NO_MIC_HINT
-from yo.paths import orb_path
+from yo.cassette import CassetteAnim, Equalizer, mode_for
 from yo.phrases import display_label, wave_allowed
-from yo.spectrum import voice_loudness, wave_amplitude
+from yo.spectrum import voice_loudness
 from yo.winapi import hwnd_int, set_dpi_aware
 
 log = logging.getLogger("yo.overlay")
@@ -249,68 +249,6 @@ def _window_cloaked(hwnd: int) -> bool:
     return hr == 0 and int(val.value) != 0
 
 
-def _flatten_to_chroma(im):
-    """RGBA → opaque RGB keyed to #00FF01. Mid-alpha fur must not tint lime."""
-    from PIL import Image
-
-    rgba = im.convert("RGBA")
-    w, h = rgba.size
-    src = rgba.load()
-    out = Image.new("RGB", (w, h), _CHROMA_RGB)
-    dst = out.load()
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = src[x, y]
-            if a < 40:
-                continue
-            if g >= 240 and r <= 40 and b <= 40:
-                continue
-            dst[x, y] = (r, g, b)
-    return out
-
-
-def _load_orb(master: tk.Misc) -> tk.PhotoImage | None:
-    path = orb_path()
-    if not path.exists():
-        return None
-    try:
-        from PIL import Image, ImageTk
-
-        im = Image.open(path).convert("RGBA")
-        src_w, src_h = im.size
-        if src_h > MASCOT_HEIGHT > 0:
-            width = max(1, int(round(src_w * (MASCOT_HEIGHT / src_h))))
-            im = im.resize((width, MASCOT_HEIGHT), Image.Resampling.LANCZOS)
-        keyed = _flatten_to_chroma(im)
-        return ImageTk.PhotoImage(keyed, master=master)
-    except Exception:
-        pass
-    try:
-        pix = tk.PhotoImage(file=str(path), master=master)
-    except tk.TclError:
-        return None
-    src_h = int(pix.height())
-    if src_h > MASCOT_HEIGHT:
-        factor = max(1, int(round(src_h / MASCOT_HEIGHT)))
-        pix = pix.subsample(factor, factor)
-    return pix
-
-
-def _voice_speed(rms_value: float, pcm) -> float:
-    loud = voice_loudness(rms_value)
-    if pcm is None or len(pcm) < 8:
-        return loud
-    zc = 0
-    prev = float(pcm[0])
-    for sample in pcm[1:]:
-        value = float(sample)
-        if prev == 0.0 or (prev < 0.0) != (value < 0.0):
-            zc += 1
-        prev = value
-    rate = min(1.0, (zc / max(1, len(pcm) - 1)) * 8.0)
-    return min(1.0, 0.55 * loud + 0.45 * rate)
-
-
 class Overlay:
     def __init__(self, on_click=None, saved_pos=None, on_move=None, on_settings=None) -> None:
         self.on_click = on_click
@@ -319,9 +257,11 @@ class Overlay:
         self.rms = 0.0
         self.wave = [0.12] * WAVE_BARS
         self.wave_target = [0.12] * WAVE_BARS
-        self._bars: list[list[float]] = []
-        self._pending_amp = 0.0
         self._last_tick = 0.0
+        self._loud = 0.0
+        self._bands: list[float] = []
+        self._cassette = CassetteAnim()
+        self._eq = Equalizer()
         self.status = ""
         self.preview = ""
         self.mic_missing = False
@@ -334,15 +274,11 @@ class Overlay:
         self._drag = None
         self._dragged = False
         self._user_pos = saved_pos
-        self._phase = 0.0
-        self._speed = 0.08
-        self._speed_target = 0.08
         self._wndproc = None
         self._old_proc = 0
         self._topmost_id: str | None = None
         self._parked = False
         self._wave_image = None
-        self._amp_shown = 0.0
         self._anchor_hwnd = 0
 
         set_dpi_aware()
@@ -376,8 +312,6 @@ class Overlay:
             bg=_CHROMA,
         )
         self._canvas.pack(fill="both", expand=True)
-        self._photo = _load_orb(self.window)
-        self._pixbuf = self._photo
 
         for widget in (self.window, self._canvas):
             widget.bind("<ButtonPress-1>", self._on_press)
@@ -403,8 +337,7 @@ class Overlay:
         self.status = status
         self.visible = True
         if not self.live:
-            self._bars = []
-            self._pending_amp = 0.0
+            self._loud = 0.0
         self._last_tick = 0.0
         self._place()
         self._map_window()
@@ -487,8 +420,7 @@ class Overlay:
         self.live = bool(live)
         self.live_since = time.monotonic() if self.live else None
         if not self.live:
-            self._bars = []
-            self._pending_amp = 0.0
+            self._loud = 0.0
         if self.visible:
             self._paint()
 
@@ -499,7 +431,6 @@ class Overlay:
         self.mic_missing = bool(missing)
         if self.mic_missing:
             self.hint = NO_MIC_HINT
-            self._bars = []
         elif self.hint == NO_MIC_HINT:
             self.hint = ""
         if self.visible:
@@ -507,44 +438,28 @@ class Overlay:
 
     def set_hint(self, text: str) -> None:
         self.hint = (text or "").strip()
-        if self.hint:
-            self._bars = []
         if self.visible:
             self._paint()
 
     def set_levels(self, rms_value: float, bands: list[float] | None = None, pcm=None) -> None:
         self.rms = float(rms_value)
-        amp = wave_amplitude(self.rms)
-        self._pending_amp += (amp - self._pending_amp) * 0.28
-        self._speed_target = _voice_speed(self.rms, pcm)
+        self._loud = voice_loudness(self.rms)
+        self._bands = list(bands or [])
 
     def _tick(self) -> None:
         self._tick_id = None
         if not self.visible:
             return
         now = time.monotonic()
-        dt = 0.016 if self._last_tick <= 0 else min(0.033, now - self._last_tick)
+        dt = 0.016 if self._last_tick <= 0 else min(0.05, now - self._last_tick)
         self._last_tick = now
-        self._speed += (self._speed_target - self._speed) * 0.16
-        self._amp_shown += (self._pending_amp - self._amp_shown) * 0.18
-        if not wave_allowed(live=self.live, hint=self.hint, mic_missing=self.mic_missing):
-            self._bars = []
-            self._paint()
-            self._tick_id = self.window.after(33, self._tick)
-            return
-        px_per_sec = 8.0 + 8.0 * self._speed
-        step = 5.0
-        width = self._wave_width()
-        amp = self._amp_shown
-        for bar in self._bars:
-            bar[0] -= px_per_sec * dt
-        self._bars = [bar for bar in self._bars if bar[0] + 3.0 > -step]
-        if not self._bars:
-            self._bars.append([width, amp])
-        while self._bars[-1][0] < width:
-            self._bars.append([self._bars[-1][0] + step, amp])
-            if len(self._bars) > 90:
-                break
+        waves_on = wave_allowed(live=self.live, hint=self.hint, mic_missing=self.mic_missing)
+        mode = mode_for(
+            visible_live=self.live, status=self.status, hint=self.hint, mic_missing=self.mic_missing
+        )
+        loud = self._loud if waves_on else 0.0
+        self._cassette.update(dt, mode, loud)
+        self._eq.update(dt, loud, self._bands, active=waves_on)
         self._paint()
         self._tick_id = self.window.after(33, self._tick)
 
@@ -972,10 +887,7 @@ class Overlay:
                 pass
 
     def _wave_width(self) -> float:
-        pix = self._photo
-        if pix is not None:
-            return min(WIDTH - 20, max(96.0, pix.width() * 0.92))
-        return float(WIDTH - 28)
+        return self._eq.width()
 
     def _paint(self) -> None:
         if not self.visible:
@@ -1005,18 +917,30 @@ class Overlay:
 
     def _draw_mascot(self) -> float:
         top = 4.0
-        pix = self._photo
-        if pix is None:
-            self._canvas.create_text(
-                WIDTH / 2,
-                top + 40,
-                text="ЙО",
-                fill="#e6f2ff",
-                font=("Segoe UI", 18, "bold"),
-            )
-            return top + 80
-        self._canvas.create_image(WIDTH / 2, top, image=pix, anchor="n")
-        return top + pix.height()
+        self._draw_shapes(self._cassette.shapes(WIDTH / 2, top, MASCOT_HEIGHT))
+        return top + MASCOT_HEIGHT
+
+    def _draw_shapes(self, shapes) -> None:
+        canvas = self._canvas
+        for shape in shapes:
+            if shape.kind == "line":
+                canvas.create_line(
+                    *shape.points, fill=shape.fill, width=shape.width, capstyle="round", joinstyle="round"
+                )
+            elif shape.kind == "oval":
+                canvas.create_oval(
+                    *shape.points,
+                    fill=shape.fill,
+                    outline=shape.outline,
+                    width=shape.width if shape.outline else 0,
+                )
+            else:
+                canvas.create_polygon(
+                    *shape.points,
+                    fill=shape.fill,
+                    outline=shape.outline,
+                    width=shape.width if shape.outline else 0,
+                )
 
     def _draw_status(self, x: float, y: float, width: float, height: float) -> None:
         label = display_label(
@@ -1087,90 +1011,11 @@ class Overlay:
         )
         canvas.tag_lower(bg, shadows[0] if shadows else item)
 
-    def _edge_fade(self, bx: float, width: float) -> float:
-        fade = max(1.0, width * 0.14)
-        if bx < fade:
-            t = max(0.0, bx / fade)
-        elif bx > width - fade:
-            t = max(0.0, (width - bx) / fade)
-        else:
-            return 1.0
-        return t * t * (3.0 - 2.0 * t)
-
-    def _make_wave_image(self, width: int, height: int):
-        if width < 8 or height < 8:
-            return None
-        try:
-            from PIL import Image, ImageDraw, ImageTk
-        except Exception:
-            return None
-        im = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(im)
-        bar_w = 3
-        mid = height / 2.0
-        for bx, amp in self._bars:
-            if bx + bar_w < 0 or bx > width:
-                continue
-            edge = self._edge_fade(float(bx), float(width))
-            if edge < 0.04:
-                continue
-            h = max(4.0, min(1.0, float(amp)) * height * 0.6) * (0.2 + 0.8 * edge)
-            if h < 1.5:
-                continue
-            by = mid - h / 2.0
-            shade = 0.30 + min(1.0, float(amp)) * 0.70
-            gray = int(184 + 40 * shade)
-            gray = max(80, min(230, gray))
-            alpha = int(255 * edge)
-            x0 = int(round(bx))
-            y0 = int(round(by))
-            x1 = max(x0 + 1, int(round(bx + bar_w)))
-            y1 = max(y0 + 1, int(round(by + h)))
-            box = [x0, y0, x1, y1]
-            fill = (gray, gray, gray, alpha)
-            try:
-                draw.rounded_rectangle(box, radius=1, fill=fill)
-            except Exception:
-                draw.rectangle(box, fill=fill)
-        keyed = _flatten_to_chroma(im)
-        photo = ImageTk.PhotoImage(keyed, master=self.window)
-        self._wave_image = photo
-        return photo
-
     def _draw_waves(self, x: float, y: float, width: float, height: float) -> None:
         if not wave_allowed(live=self.live, hint=self.hint, mic_missing=self.mic_missing):
             return
-        photo = self._make_wave_image(max(8, int(round(width))), max(8, int(round(height))))
-        if photo is not None:
-            self._canvas.create_image(x, y, image=photo, anchor="nw")
-            return
-        bar_w = 3.0
-        mid = y + height / 2.0
-        for bx, amp in self._bars:
-            if bx + bar_w < 0 or bx > width:
-                continue
-            edge = self._edge_fade(float(bx), float(width))
-            if edge < 0.04:
-                continue
-            h = max(4.0, min(1.0, float(amp)) * height * 0.6) * (0.2 + 0.8 * edge)
-            if h < 1.5:
-                continue
-            by = mid - h / 2.0
-            if edge < 0.12:
-                color = _CHROMA
-            else:
-                shade = 0.30 + min(1.0, float(amp)) * 0.70
-                gray = int(184 + 40 * shade)
-                gray = max(80, min(230, gray))
-                color = f"#{gray:02x}{gray:02x}{gray:02x}"
-            self._canvas.create_rectangle(
-                x + bx,
-                by,
-                x + bx + bar_w,
-                by + h,
-                outline="",
-                fill=color,
-            )
+        # Эквалайзер по голосу: середина — низы, края — верхи; цвета далеко от _CHROMA.
+        self._draw_shapes(self._eq.shapes(x, y, height))
 
 
 def _draw_mascot(overlay: Overlay) -> float:

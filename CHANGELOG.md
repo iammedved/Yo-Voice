@@ -10,6 +10,7 @@
 
 ## Unreleased
 
+- On Windows the overlay shows an animated cassette instead of the cat. Its reels are its eyes and turn faster the louder you speak; the mouth opens with your voice, the cassette bounces on loud syllables, notes fly up while you talk, REC blinks while Ёхо listens, and it blinks every few seconds. After about 45 seconds of tape it rewinds and starts over. It fast-forwards while a model or translation loads, and closes its eyes when there is no microphone. The waveform is now an equalizer: the middle bars follow the low frequencies of your voice, the outer bars follow the high ones, and colour goes from amber to pink as you get louder.
 - **Включение Ёхо** is a separate key, ё/tilde by default, assigned in settings. One press turns Ёхо on and it listens all the time; another press turns it off. While Ёхо is off, the side mouse buttons work as usual.
 - The dictation key (the side mouse button) no longer starts and stops recording. Each press pastes everything said so far into the active field at once, and listening goes on. The translate key does the same, translated into English. A left click on the tray icon and the tray menu item **Выключить / Включить Ёхо** also turn it on and off.
 - «Only my voice» no longer cuts your own fast or quiet words out of a phrase. Once a phrase is recognized as yours, only clearly foreign parts are removed; before, about 12% of the user's own speech was dropped, up to 60% on short phrases.

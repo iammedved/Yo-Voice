@@ -73,15 +73,10 @@ class OverlayLayoutTests(unittest.TestCase):
         paint = src[src.index("def _paint") : src.index("def _draw_mascot")]
         self.assertIn("wave_allowed", paint)
         self.assertLess(paint.index("_draw_status"), paint.index("_draw_waves"))
-        load = src[src.index("def _load_orb") : src.index("def _voice_speed")]
-        self.assertIn("ImageTk", load)
-        self.assertIn("_flatten_to_chroma", load)
-        self.assertIn("_make_wave_image", src)
-        self.assertIn("_edge_fade", src)
-        self.assertIn("wave_amplitude", src)
         self.assertIn("voice_loudness", src)
+        self.assertIn("CassetteAnim", src)
         waves = src[src.index("def _draw_waves") : src.index("def run_demo")]
-        self.assertIn("_make_wave_image", waves)
+        self.assertIn("self._eq.shapes", waves)
         self.assertIn("_CHROMA", waves)
 
     def test_park_withdraws_without_clearing_listen_state(self):
