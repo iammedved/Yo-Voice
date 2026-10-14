@@ -125,6 +125,14 @@ class ConfigLoadTests(unittest.TestCase):
             self.assertEqual(data["hotkey_keycode"], 9)
             self.assertEqual(data["microphone"], "Mic")
 
+    def test_default_power_key_is_tilde(self):
+        from yo.bind import binds_conflict, optional_bind
+
+        cfg = Config()
+        power = optional_bind(cfg.power_hotkey_kind, cfg.power_hotkey_keycode)
+        self.assertIsNotNone(power)
+        self.assertTrue(binds_conflict(power, optional_bind("key", 0xC0)))
+
     def test_default_microphone_is_empty_auto(self):
         self.assertEqual(Config().microphone, "")
 

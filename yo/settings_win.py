@@ -24,6 +24,7 @@ def popup_mic_menu(
     on_rebind=None,
     on_rebind_translate=None,
     listening: bool | None = None,
+    on_rebind_power=None,
 ) -> None:
     """Open the settings panel next to the cat. Name kept for Linux-parity tests."""
     run_settings_window(
@@ -32,6 +33,7 @@ def popup_mic_menu(
         on_pick=on_pick,
         on_rebind=on_rebind,
         on_rebind_translate=on_rebind_translate,
+        on_rebind_power=on_rebind_power,
         own_loop=False,
         listening=listening,
     )
@@ -60,6 +62,7 @@ def run_settings_window(
     on_pick=None,
     on_rebind=None,
     on_rebind_translate=None,
+    on_rebind_power=None,
     *,
     own_loop: bool = False,
     listening: bool | None = None,
@@ -164,9 +167,36 @@ def run_settings_window(
     combo.bind("<<ComboboxSelected>>", on_changed)
 
     ttk.Separator(frame).pack(fill="x", pady=(0, 10))
+    power = optional_bind(cfg.power_hotkey_kind, cfg.power_hotkey_keycode)
+    power_var = tk.StringVar(value=format_bind(power) if power else "не назначена")
     ttk.Label(
         frame,
-        text="Клавиша диктовки (нажать — говорить, нажать ещё раз — вставить)",
+        text="Включение Ёхо (нажать — включить и сразу слушать, ещё раз — выключить)",
+        wraplength=370,
+    ).pack(anchor="w")
+    row0 = ttk.Frame(frame)
+    row0.pack(fill="x", pady=(4, 8))
+    ttk.Label(row0, textvariable=power_var).pack(side="left")
+
+    def _do_rebind_power() -> None:
+        if on_rebind_power is not None:
+            win.destroy()
+            on_rebind_power()
+            return
+        if daemon_alive():
+            try:
+                send_command("rebind-power")
+                power_var.set("нажмите кнопку — смотрите кота")
+                return
+            except OSError:
+                log.warning("демон Ёхо не принял rebind-power")
+        _capture_here("power")
+
+    ttk.Button(row0, text="Назначить кнопку включения", command=_do_rebind_power).pack(side="right")
+
+    ttk.Label(
+        frame,
+        text="Клавиша вставки (нажать — сказанное сразу уходит в активное поле)",
         wraplength=370,
     ).pack(anchor="w")
     bind = normalize_bind(cfg.hotkey_kind, cfg.hotkey_keycode)
@@ -196,19 +226,28 @@ def run_settings_window(
             if bind is None:
                 bind_var.set(format_bind(normalize_bind(*_current_listen())))
                 trans_var.set(_current_translate_label())
+                power_var.set(_current_power_label())
                 return
             current = load_config()
+            paste_b = normalize_bind(current.hotkey_kind, current.hotkey_keycode)
+            trans_b = optional_bind(current.translate_hotkey_kind, current.translate_hotkey_keycode)
+            power_b = optional_bind(current.power_hotkey_kind, current.power_hotkey_keycode)
             if target == "translate":
-                other = normalize_bind(current.hotkey_kind, current.hotkey_keycode)
-                if binds_conflict(bind, other):
+                if binds_conflict(bind, paste_b) or binds_conflict(bind, power_b):
                     trans_var.set("кнопка уже занята")
                     return
                 current.translate_hotkey_kind = bind.kind
                 current.translate_hotkey_keycode = bind.code
                 trans_var.set(format_bind(bind))
+            elif target == "power":
+                if binds_conflict(bind, paste_b) or binds_conflict(bind, trans_b):
+                    power_var.set("кнопка уже занята")
+                    return
+                current.power_hotkey_kind = bind.kind
+                current.power_hotkey_keycode = bind.code
+                power_var.set(format_bind(bind))
             else:
-                other = optional_bind(current.translate_hotkey_kind, current.translate_hotkey_keycode)
-                if binds_conflict(bind, other):
+                if binds_conflict(bind, trans_b) or binds_conflict(bind, power_b):
                     bind_var.set("кнопка уже занята")
                     return
                 current.hotkey_kind = bind.kind
@@ -233,11 +272,18 @@ def run_settings_window(
         trans = optional_bind(current.translate_hotkey_kind, current.translate_hotkey_keycode)
         return format_bind(trans) if trans else "не назначена"
 
+    def _current_power_label() -> str:
+        current = load_config()
+        power = optional_bind(current.power_hotkey_kind, current.power_hotkey_keycode)
+        return format_bind(power) if power else "не назначена"
+
     def _capture_here(target: str) -> None:
         from yo.bind import capture_bind
 
         if target == "translate":
             trans_var.set("нажмите кнопку")
+        elif target == "power":
+            power_var.set("нажмите кнопку")
         else:
             bind_var.set("нажмите кнопку")
         capture_bind(lambda captured, t=target: _apply_captured(captured, target=t))
@@ -246,7 +292,7 @@ def run_settings_window(
 
     trans = optional_bind(cfg.translate_hotkey_kind, cfg.translate_hotkey_keycode)
     trans_var = tk.StringVar(value=format_bind(trans) if trans else "не назначена")
-    ttk.Label(frame, text="Клавиша перевода").pack(anchor="w")
+    ttk.Label(frame, text="Клавиша вставки с переводом на английский").pack(anchor="w")
     row2 = ttk.Frame(frame)
     row2.pack(fill="x", pady=(4, 8))
     ttk.Label(row2, textvariable=trans_var).pack(side="left")
@@ -331,7 +377,7 @@ def run_settings_window(
     armed["ok"] = True
 
     def place() -> None:
-        w, h = 400, 360
+        w, h = 400, 470
         if event is not None and getattr(event, "x_root", None) is not None:
             x, y = int(event.x_root), int(event.y_root)
         elif cfg.overlay_x is not None and cfg.overlay_y is not None:

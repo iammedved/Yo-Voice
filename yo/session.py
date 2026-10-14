@@ -145,6 +145,12 @@ class DictationSession:
             self._inject(text)
         return text
 
+    def take_held(self) -> str:
+        """Забрать накопленное без вставки (вставка с переводом идёт отдельно)."""
+        text = self.held_text
+        self._held = []
+        return text
+
     def set_task(self, task: str) -> None:
         self.task = "translate" if task == "translate" else "transcribe"
 

@@ -79,3 +79,14 @@ class DictationSessionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TakeHeldTests(unittest.TestCase):
+    def test_take_held_returns_text_without_pasting(self):
+        pasted: list[str] = []
+        session = DictationSession(pasted.append)
+        session.start()
+        session.commit_utterance("привет мир")
+        self.assertEqual(session.take_held(), "Привет мир.")
+        self.assertEqual(pasted, [])
+        self.assertEqual(session.held_text, "")

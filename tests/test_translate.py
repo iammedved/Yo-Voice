@@ -214,12 +214,27 @@ class TranslateWiringTests(unittest.TestCase):
     def test_app_starts_two_toggles_without_reloading_model(self):
         src = (project_root() / "yo" / "app.py").read_text(encoding="utf-8")
         self.assertIn("listen_press_action", src)
-        self.assertIn('_press("translate")', src)
+        self.assertIn('paste_now("translate")', src)
         self.assertIn("restore_clipboard_after_paste", src)
         self.assertIn("_pause_hotkeys", src)
         self.assertIn("_restart_hotkey", src)
         toggle = src[src.index("def toggle") : src.index("def start_listen")]
         self.assertNotIn("engine.load", toggle)
+
+    def test_power_key_owns_side_buttons_only_while_on(self):
+        src = (project_root() / "yo" / "app.py").read_text(encoding="utf-8")
+        pairs = src[src.index("def _hotkey_pairs") : src.index("def _restart_hotkey")]
+        # Paste / translate buttons are grabbed only while Ёхо is on;
+        # the power key is always grabbed so it can turn Ёхо back on.
+        self.assertIn("if self._enabled:", pairs)
+        self.assertIn("self.toggle_power", pairs)
+        self.assertLess(pairs.index("if self._enabled:"), pairs.index("self.toggle_power"))
+        on = src[src.index("def turn_on") : src.index("def turn_off")]
+        self.assertIn("start_listen", on)
+        off = src[src.index("def turn_off") : src.index("def _resume_listen")]
+        self.assertIn("_drop_listen", off)
+        paste = src[src.index("def paste_now") : src.index("def _finish_flush")]
+        self.assertNotIn("stop_listen", paste)
 
     def test_start_listen_sets_task_before_show(self):
         src = (project_root() / "yo" / "app.py").read_text(encoding="utf-8")

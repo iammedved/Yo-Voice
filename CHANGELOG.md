@@ -10,6 +10,8 @@
 
 ## Unreleased
 
+- **Включение Ёхо** is a separate key, ё/tilde by default, assigned in settings. One press turns Ёхо on and it listens all the time; another press turns it off. While Ёхо is off, the side mouse buttons work as usual.
+- The dictation key (the side mouse button) no longer starts and stops recording. Each press pastes everything said so far into the active field at once, and listening goes on. The translate key does the same, translated into English. A left click on the tray icon and the tray menu item **Выключить / Включить Ёхо** also turn it on and off.
 - «Only my voice» no longer cuts your own fast or quiet words out of a phrase. Once a phrase is recognized as yours, only clearly foreign parts are removed; before, about 12% of the user's own speech was dropped, up to 60% on short phrases.
 - A phrase longer than 30 seconds without a pause is split at the quietest moment of its last 3 seconds instead of in the middle of a word.
 - **Слушать только мой голос**: record a 25-second sample of your voice once (settings → **Записать мой голос**, or `yo-voice enroll`), and other voices are cut out before recognition. A local 26 MB speaker model (WeSpeaker ResNet34, ONNX) compares every 1.5 s of a phrase with your voiceprint. Off until you record a sample; when enabled, a missing model or sample blocks unverified input.

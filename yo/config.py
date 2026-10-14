@@ -24,6 +24,9 @@ class Config:
     hotkey_keycode: int = 49  # X11 keycode or mouse button
     translate_hotkey_kind: str = ""  # key | button | empty = unset
     translate_hotkey_keycode: int = 0
+    # Turns Ёхо on (it listens all the time) and off. Default ё/tilde.
+    power_hotkey_kind: str = "key"  # key | button | empty = unset
+    power_hotkey_keycode: int = 49
     sample_rate: int = 16000
     inject_leading_space: bool = True
     overlay_x: int | None = None

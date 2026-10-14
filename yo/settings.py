@@ -90,6 +90,7 @@ def popup_mic_menu(
     on_rebind=None,
     on_rebind_translate=None,
     listening: bool | None = None,
+    on_rebind_power=None,
 ) -> None:
     if sys.platform == "win32":
         from yo.settings_win import popup_mic_menu as _popup
@@ -100,6 +101,7 @@ def popup_mic_menu(
             on_pick=on_pick,
             on_rebind=on_rebind,
             on_rebind_translate=on_rebind_translate,
+            on_rebind_power=on_rebind_power,
             listening=listening,
         )
         return
