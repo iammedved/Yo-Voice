@@ -143,8 +143,7 @@ class ClipWinSourceTests(unittest.TestCase):
         self.assertIn("SWP_NOOWNERZORDER", src)
         self.assertIn("_pulse_topmost", src)
         self.assertIn("SetLayeredWindowAttributes", src)
-        self.assertIn("_flatten_to_chroma", src)
-        self.assertIn("8.0 + 8.0 * self._speed", src)
+        self.assertIn("mode_for(", src)
         pulse = src[src.index("def _pulse_topmost") : src.index("def _map_window")]
         self.assertNotIn("_attach_to_foreground", pulse)
         self.assertNotIn("SWP_SHOWWINDOW", pulse)
