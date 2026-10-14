@@ -19,7 +19,10 @@ ITEM_SETTINGS = "Настройки"
 ITEM_LOG = "Открыть журнал"
 ITEM_REPORT = "Сообщить о сбое"
 ITEM_QUIT = "Выход"
+ITEM_POWER_OFF = "Выключить Ёхо"
+ITEM_POWER_ON = "Включить Ёхо"
 
+ID_POWER = 1005
 ID_SETTINGS = 1001
 ID_LOG = 1002
 ID_REPORT = 1004
@@ -185,7 +188,11 @@ class TrayIcon:
         on_quit: Callable[[], object] | None = None,
         on_toggle: Callable[[], object] | None = None,
         on_report: Callable[[], object] | None = None,
+        on_power: Callable[[], object] | None = None,
+        is_enabled: Callable[[], bool] | None = None,
     ) -> None:
+        self.on_power = on_power
+        self.is_enabled = is_enabled
         self.on_settings = on_settings
         self.on_open_log = on_open_log
         self.on_quit = on_quit
@@ -382,6 +389,16 @@ class TrayIcon:
         if not menu:
             return
         try:
+            if self.on_power is not None:
+                enabled = True
+                if self.is_enabled is not None:
+                    try:
+                        enabled = bool(self.is_enabled())
+                    except Exception:
+                        enabled = True
+                label = ITEM_POWER_OFF if enabled else ITEM_POWER_ON
+                user32.AppendMenuW(menu, MF_STRING, ID_POWER, label)
+                user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
             user32.AppendMenuW(menu, MF_STRING, ID_SETTINGS, ITEM_SETTINGS)
             user32.AppendMenuW(menu, MF_STRING, ID_LOG, ITEM_LOG)
             user32.AppendMenuW(menu, MF_STRING, ID_REPORT, ITEM_REPORT)
@@ -404,6 +421,7 @@ class TrayIcon:
         finally:
             user32.DestroyMenu(menu)
         action = {
+            ID_POWER: self.on_power,
             ID_SETTINGS: self.on_settings,
             ID_LOG: self.on_open_log,
             ID_REPORT: self.on_report,

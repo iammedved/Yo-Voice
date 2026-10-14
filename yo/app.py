@@ -88,6 +88,9 @@ class YoApp:
         self._rebind_target = "transcribe"
         self._rebind_gen = 0
         self._rebind_overlay_only = False
+        # Ёхо включается кнопкой включения и слушает всё время, пока включена.
+        self._enabled = False
+        self._flushing = False
         self._ipc: IpcServer | None = None
         self._mic_poll_id: int | None = None
         self._saved_clip: str | None = None
@@ -155,6 +158,8 @@ class YoApp:
         elif self._in_game and not holding:
             self._in_game = False
             log.info("игра ушла с экрана, диктовку снова можно включить")
+            if self._enabled and not self.session.listening:
+                idle_add(self._resume_listen)
         return holding
 
     def _watch_game(self) -> bool:
@@ -187,10 +192,105 @@ class YoApp:
             self._show_defect("загрузка модели распознавания", exc, "model")
 
     def toggle(self) -> bool:
-        return self._press("transcribe")
+        """Кнопка вставки: всё сказанное — в активное поле, запись идёт дальше."""
+        return self.paste_now("transcribe")
 
     def toggle_translate(self) -> bool:
-        return self._press("translate")
+        """Кнопка перевода: сказанное — в поле по-английски, запись идёт дальше."""
+        return self.paste_now("translate")
+
+    def toggle_power(self) -> bool:
+        if self._enabled:
+            return self.turn_off()
+        return self.turn_on()
+
+    def turn_on(self) -> bool:
+        if self._enabled:
+            return False
+        self._enabled = True
+        log.info("Ёхо включена — слушаю всё время")
+        self._restart_hotkey()
+        self.start_listen("transcribe")
+        return False
+
+    def turn_off(self) -> bool:
+        if not self._enabled:
+            return False
+        self._enabled = False
+        self._flushing = False
+        log.info("Ёхо выключена")
+        self._cancel_rebind()
+        self._drop_listen()
+        self._restart_hotkey()
+        return False
+
+    def _resume_listen(self) -> bool:
+        if self._enabled and not self.session.listening and not self._stopping:
+            self.start_listen("transcribe")
+        return False
+
+    def paste_now(self, task: str = "transcribe") -> bool:
+        if self._rebinding or not self._enabled:
+            return False
+        if not self.session.listening:
+            self._resume_listen()
+            return False
+        if self._stopping or self._flushing:
+            return False
+        self._flushing = True
+        # Вставка идёт туда, где курсор в момент нажатия.
+        self._snapshot_paste_target()
+        timeout_add(STOP_TAIL_MS, self._finish_flush, self._token, task)
+        return False
+
+    def _finish_flush(self, token: int, task: str) -> bool:
+        if token != self._token or not self.session.listening:
+            self._flushing = False
+            return False
+        audio = self._take_chunks()
+        # Недоговорённая фраза уходит сейчас; следующая начинается с чистого листа.
+        self.vad = SpeechGate()
+        self._jobs.put((audio, False, token, None, "transcribe", task))
+        return False
+
+    def _paste_held(self, flush_task: str) -> None:
+        self._flushing = False
+        if flush_task == "translate":
+            text = self.session.take_held()
+            self.overlay.set_preview("")
+            if not text:
+                return
+            status = "загрузка перевода" if not self.translator.loaded() else "перевод"
+            self.overlay.set_status(status)
+            threading.Thread(
+                target=self._translate_and_paste,
+                args=(text,),
+                daemon=True,
+                name="yo-translate-paste",
+            ).start()
+            return
+        self.session.flush()
+        self.overlay.set_preview("")
+        timeout_add(400, self._restore_clipboard)
+
+    def _translate_and_paste(self, text: str) -> None:
+        try:
+            english = english_from_russian_asr(text, self.translator.translate_ru_en)
+        except Exception as exc:
+            log.exception("ошибка перевода")
+            self._show_defect("перевод фразы на английский", exc, "translate")
+            english = ""
+        if english:
+            log.info("перевод: %s", english)
+        idle_add(self._paste_translated, english)
+
+    def _paste_translated(self, english: str) -> bool:
+        if self.overlay.status in {"перевод", "загрузка перевода"}:
+            self.overlay.set_status("")
+        if english:
+            self._inject_text(english)
+            timeout_add(400, self._restore_clipboard)
+        return False
 
     def _press(self, task: str) -> bool:
         if self._rebinding:
@@ -536,6 +636,7 @@ class YoApp:
         token: int,
         utt: int | None = None,
         task: str = "transcribe",
+        flush: str | None = None,
     ) -> None:
         raw = ""
         speech_seconds = 0.0
@@ -569,12 +670,19 @@ class YoApp:
                 self._show_defect("перевод фразы на английский", exc, "translate")
             else:
                 self._show_defect("распознавание фразы", exc, "asr")
-            idle_add(self._finalize_failed, str(exc), hide_after, token)
+            idle_add(self._finalize_failed, str(exc), hide_after, token, flush)
             return
-        idle_add(self._commit_raw, raw, hide_after, token, utt, task, speech_seconds)
+        idle_add(self._commit_raw, raw, hide_after, token, utt, task, speech_seconds, flush)
 
-    def _finalize_failed(self, message: str, hide_after: bool, token: int) -> bool:
+    def _finalize_failed(
+        self, message: str, hide_after: bool, token: int, flush: str | None = None
+    ) -> bool:
         self.overlay.set_status(f"ошибка: {message}")
+        if flush and token == self._token and self.session.listening:
+            self._paste_held(flush)
+            return False
+        if flush:
+            self._flushing = False
         if hide_after and token == self._token:
             # Последний кусок не распознался — уже сказанное всё равно вставляем.
             self.session.flush()
@@ -591,6 +699,7 @@ class YoApp:
         utt: int | None = None,
         task: str = "transcribe",
         speech_seconds: float = 0.0,
+        flush: str | None = None,
     ) -> bool:
         if not accept_asr_commit(
             token=token,
@@ -598,6 +707,8 @@ class YoApp:
             listening=self.session.listening,
             stopping=self._stopping,
         ):
+            if flush:
+                self._flushing = False
             return False
         if raw and too_sparse_for_duration(raw, speech_seconds):
             log.info(
@@ -620,6 +731,9 @@ class YoApp:
                 self.overlay.set_status(feedback)
                 if not hide_after:
                     timeout_add(1400, self._clear_unrecognized)
+        if flush and self.session.listening:
+            self._paste_held(flush)
+            return False
         if hide_after:
             pasted = self.session.flush()
             self.session.stop()
@@ -942,8 +1056,10 @@ class YoApp:
                 on_settings=lambda: idle_add(self._open_settings),
                 on_open_log=lambda: idle_add(self._open_log),
                 on_quit=lambda: idle_add(self.quit),
-                on_toggle=lambda: idle_add(self.toggle),
+                on_toggle=lambda: idle_add(self.toggle_power),
                 on_report=lambda: idle_add(self._open_report),
+                on_power=lambda: idle_add(self.toggle_power),
+                is_enabled=lambda: self._enabled,
             )
             show_intro = not bool(getattr(self.config, "tray_intro_shown", False))
             self._tray.start(balloon=show_intro)
@@ -974,6 +1090,7 @@ class YoApp:
                 on_pick=lambda name: idle_add(self._reload_config, name),
                 on_rebind=lambda: idle_add(self._begin_rebind),
                 on_rebind_translate=lambda: idle_add(self._begin_translate_rebind),
+                on_rebind_power=lambda: idle_add(self._begin_power_rebind),
                 listening=self.session.listening,
             )
         except Exception:
@@ -995,22 +1112,38 @@ class YoApp:
     def _translate_bind(self) -> ToggleBind | None:
         return optional_bind(self.config.translate_hotkey_kind, self.config.translate_hotkey_keycode)
 
+    def _power_bind(self) -> ToggleBind | None:
+        return optional_bind(self.config.power_hotkey_kind, self.config.power_hotkey_keycode)
+
     def _pause_hotkeys(self) -> None:
         if self._hotkey is not None:
             self._hotkey.stop()
             self._hotkey = None
 
     def _hotkey_pairs(self) -> list[tuple[ToggleBind, object]]:
-        pairs: list[tuple[ToggleBind, object]] = [
-            (self._current_bind(), lambda: idle_add(self.toggle)),
-        ]
-        trans = self._translate_bind()
-        if trans is not None and not binds_conflict(trans, self._current_bind()):
-            pairs.append((trans, lambda: idle_add(self.toggle_translate)))
+        pairs: list[tuple[ToggleBind, object]] = []
+        power = self._power_bind()
+        # Пока Ёхо выключена, боковые кнопки работают как обычно (назад/вперёд).
+        if self._enabled:
+            paste = self._current_bind()
+            if not binds_conflict(paste, power):
+                pairs.append((paste, lambda: idle_add(self.toggle)))
+            trans = self._translate_bind()
+            if (
+                trans is not None
+                and not binds_conflict(trans, paste)
+                and not binds_conflict(trans, power)
+            ):
+                pairs.append((trans, lambda: idle_add(self.toggle_translate)))
+        if power is not None:
+            pairs.append((power, lambda: idle_add(self.toggle_power)))
         return pairs
 
     def _restart_hotkey(self) -> None:
         pairs = self._hotkey_pairs()
+        if not pairs:
+            self._pause_hotkeys()
+            return
         hk = self._hotkey
         if hk is not None and getattr(hk, "can_replace", None) and hk.can_replace(pairs):
             hk.replace_binds(pairs)
@@ -1028,6 +1161,9 @@ class YoApp:
 
     def _begin_translate_rebind(self) -> bool:
         return self._begin_rebind_target("translate")
+
+    def _begin_power_rebind(self) -> bool:
+        return self._begin_rebind_target("power")
 
     def _begin_rebind_target(self, target: str) -> bool:
         self._rebind_gen += 1
@@ -1063,8 +1199,12 @@ class YoApp:
             if overlay_only and not self.session.listening:
                 self.overlay.hide()
             return False
-        other = self._translate_bind() if self._rebind_target == "transcribe" else self._current_bind()
-        if binds_conflict(bind, other):
+        others = {
+            "transcribe": (self._translate_bind(), self._power_bind()),
+            "translate": (self._current_bind(), self._power_bind()),
+            "power": (self._current_bind(), self._translate_bind()),
+        }.get(self._rebind_target, ())
+        if any(binds_conflict(bind, other) for other in others):
             self._restart_hotkey()
             self.overlay.set_hint("кнопка уже занята")
             timeout_add(1800, self._clear_busy_bind_hint)
@@ -1073,6 +1213,11 @@ class YoApp:
             self.config = patch_config(
                 translate_hotkey_kind=bind.kind,
                 translate_hotkey_keycode=bind.code,
+            )
+        elif self._rebind_target == "power":
+            self.config = patch_config(
+                power_hotkey_kind=bind.kind,
+                power_hotkey_keycode=bind.code,
             )
         else:
             self.config = patch_config(
@@ -1104,6 +1249,7 @@ class YoApp:
     def _reload_config(self, microphone: str | None = None) -> bool:
         previous = self._current_bind()
         previous_tr = self._translate_bind()
+        previous_pw = self._power_bind()
         self.config = load_config()
         if microphone is not None:
             wanted = str(microphone)
@@ -1111,7 +1257,8 @@ class YoApp:
                 self.config = patch_config(microphone=wanted)
         nxt = self._current_bind()
         nxt_tr = self._translate_bind()
-        if nxt != previous or nxt_tr != previous_tr:
+        nxt_pw = self._power_bind()
+        if nxt != previous or nxt_tr != previous_tr or nxt_pw != previous_pw:
             self._restart_hotkey()
         if self.session.listening and not self._stopping:
             try:
@@ -1125,14 +1272,17 @@ class YoApp:
 
     def _on_ipc(self, command: str) -> str:
         cmd = command.strip().lower()
-        if cmd == "toggle":
-            idle_add(self.toggle)
+        if cmd in {"toggle", "power"}:
+            idle_add(self.toggle_power)
             return "ok"
-        if cmd == "start":
-            idle_add(self.start_listen)
+        if cmd in {"start", "on"}:
+            idle_add(self.turn_on)
             return "ok"
-        if cmd == "stop":
-            idle_add(self.stop_listen)
+        if cmd in {"stop", "off"}:
+            idle_add(self.turn_off)
+            return "ok"
+        if cmd == "paste":
+            idle_add(self.paste_now)
             return "ok"
         if cmd == "reload":
             idle_add(self._reload_config)
@@ -1143,10 +1293,15 @@ class YoApp:
         if cmd in {"rebind-translate", "rebind_translate"}:
             idle_add(self._begin_translate_rebind)
             return "ok"
+        if cmd in {"rebind-power", "rebind_power"}:
+            idle_add(self._begin_power_rebind)
+            return "ok"
         if cmd == "settings":
             idle_add(self._open_settings)
             return "ok"
         if cmd in {"status"}:
+            if not self._enabled:
+                return "off"
             return "listening" if self.session.listening else "idle"
         if cmd in {"quit", "exit"}:
             idle_add(self.quit)
