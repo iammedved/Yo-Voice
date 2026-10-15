@@ -21,9 +21,13 @@ log = logging.getLogger("yo.inject")
 
 INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_UNICODE = 0x0004
+VK_RETURN = 0x0D
 VK_SHIFT = 0x10
 VK_CONTROL = 0x11
 VK_V = 0x56
+# Typed fallback: send in small batches so slow targets (Electron, 1C) keep up.
+TYPE_CHUNK = 48
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 GA_ROOT = 2
 GA_ROOTOWNER = 3
@@ -223,6 +227,40 @@ def _key_event(vk: int, flags: int = 0) -> INPUT:
     return event
 
 
+def _unicode_key(code: int, flags: int) -> INPUT:
+    event = INPUT()
+    event.type = INPUT_KEYBOARD
+    event.union.ki = KEYBDINPUT(0, code, KEYEVENTF_UNICODE | flags, 0, 0)
+    return event
+
+
+def unicode_key_events(text: str) -> list[list[INPUT]]:
+    """Key events that type ``text`` without the clipboard, one list per character.
+
+    A line break is Shift+Enter so a chat field does not send the message.
+    """
+    out: list[list[INPUT]] = []
+    for ch in (text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", ""):
+        if ch == "\n":
+            out.append(
+                [
+                    _key_event(VK_SHIFT),
+                    _key_event(VK_RETURN),
+                    _key_event(VK_RETURN, KEYEVENTF_KEYUP),
+                    _key_event(VK_SHIFT, KEYEVENTF_KEYUP),
+                ]
+            )
+            continue
+        raw = ch.encode("utf-16-le", "surrogatepass")
+        events: list[INPUT] = []
+        for i in range(0, len(raw), 2):
+            code = int.from_bytes(raw[i : i + 2], "little")
+            events.append(_unicode_key(code, 0))
+            events.append(_unicode_key(code, KEYEVENTF_KEYUP))
+        out.append(events)
+    return out
+
+
 def _process_exe(hwnd: int) -> str:
     if not hwnd:
         return ""
@@ -347,8 +385,19 @@ def _related_hwnds(hwnd: int) -> list[int]:
 
 
 class Injector:
-    def paste(self, hwnd: int | None = None, overlay_hwnd: int | None = None) -> None:
+    def paste(
+        self,
+        hwnd: int | None = None,
+        overlay_hwnd: int | None = None,
+        text: str | None = None,
+    ) -> bool:
+        """Ctrl+V the clipboard into the target; with ``text`` type it instead.
+
+        ``text`` is the fallback when the clipboard would not hold the
+        dictation. Returns True when the keys were delivered.
+        """
         time.sleep(0.04)
+        typed = text is not None
         overlay = _hwnd_int(overlay_hwnd)
         saved = _hwnd_int(hwnd)
         live = self._live_target(overlay)
@@ -375,7 +424,7 @@ class Injector:
             )
         if not target:
             log.warning("нет окна для вставки — текст остаётся в буфере")
-            return
+            return False
         allow_set_foreground()
         attached = self._attach_input(target)
         try:
@@ -392,8 +441,8 @@ class Injector:
             console = self._is_classic_console(target)
             fg_now = _hwnd_int(user32.GetForegroundWindow())
             log.info(
-                "вставка Ctrl+%sV в %s hwnd=%s %s fg=%s %s",
-                "Shift+" if terminal else "",
+                "вставка %s в %s hwnd=%s %s fg=%s %s",
+                "печатью" if typed else ("Ctrl+Shift+V" if terminal else "Ctrl+V"),
                 _process_exe(target) or "?",
                 target,
                 window_label(target),
@@ -407,7 +456,9 @@ class Injector:
             self._detach_input(attached)
             attached = []
             if fg_ok:
-                if terminal:
+                if typed:
+                    sent = (console and self._console_ctrl_v(target, text)) or self._type_text(text or "")
+                elif terminal:
                     sent = self._chord([VK_CONTROL, VK_SHIFT, VK_V])
                 elif console:
                     sent = self._console_ctrl_v(target)
@@ -437,10 +488,14 @@ class Injector:
             if not sent:
                 if fg_ok:
                     log.warning("SendInput не доставил клавиши err=%s", ctypes.get_last_error())
-                if fg_ok or self._accepts_wm_paste(target):
+                if typed:
+                    # WM_PASTE would paste whatever the clipboard holds, not our text.
+                    log.info("печать не дошла hwnd=%s", target)
+                elif fg_ok or self._accepts_wm_paste(target):
                     self._wm_paste(target, overlay=overlay)
                 else:
                     log.info("вставка не дошла hwnd=%s — текст в буфере", target)
+            return sent
         finally:
             self._detach_input(attached)
 
@@ -537,6 +592,21 @@ class Injector:
         n = user32.SendInput(len(events), arr, ctypes.sizeof(INPUT))
         return n == len(events)
 
+    def _type_text(self, text: str) -> bool:
+        keys = unicode_key_events(text)
+        for start in range(0, len(keys), TYPE_CHUNK):
+            events = [ev for chunk in keys[start : start + TYPE_CHUNK] for ev in chunk]
+            if not events:
+                continue
+            arr = (INPUT * len(events))(*events)
+            kernel32.SetLastError(0)
+            if user32.SendInput(len(events), arr, ctypes.sizeof(INPUT)) != len(events):
+                log.warning("печать прервалась на символе %s из %s", start, len(keys))
+                return False
+            time.sleep(0.01)
+        log.info("напечатано символов=%s", len(keys))
+        return True
+
     def _wm_paste(self, hwnd: int, overlay: int = 0) -> None:
         if not hwnd or is_unpasteable_hwnd(hwnd, overlay):
             return
@@ -594,7 +664,7 @@ class Injector:
             return False
         return False
 
-    def _console_ctrl_v(self, hwnd: int) -> bool:
+    def _console_ctrl_v(self, hwnd: int, text: str | None = None) -> bool:
         """Write clipboard text into the console input buffer as Unicode keys.
 
         A fake Ctrl+V chord does not run conhost's paste handler. On failure
@@ -606,9 +676,10 @@ class Injector:
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         if not pid.value or pid.value == kernel32.GetCurrentProcessId():
             return False
-        from yo.clip_win import clipboard_get
+        if text is None:
+            from yo.clip_win import clipboard_get
 
-        text = clipboard_get() or ""
+            text = clipboard_get() or ""
         if not text or len(text) > 4000 or any(ord(ch) > 0xFFFF for ch in text):
             return False
         attached = False

@@ -10,6 +10,10 @@
 
 ## Unreleased
 
+- A long dictation no longer fails with YO-PASTE-01 «clipboard verify mismatch». The clipboard counts as taken when nothing has changed it since Ёхо wrote there, a line-break conversion by another program is not treated as a failure, and a clipboard that is only busy is read again. If another program keeps replacing the text, Ёхо types it into the field directly instead of dropping it. If that fails too, the text is saved to `lost-dictation.txt` next to the log, and the report says so and names the program that took the clipboard.
+- Text that could not be pasted no longer takes away the retries of the next one, the old clipboard is not put back over a dictation that did reach it, and the clipboard is restored only after the last queued paste.
+- A NUL character can no longer cut off pasted text, and a domain at the start of a continued phrase no longer turns into hidden characters.
+
 - On Windows the overlay shows an animated cassette instead of the cat. Its reels are its eyes and turn faster the louder you speak; the mouth opens with your voice, the cassette bounces on loud syllables, notes fly up while you talk, REC blinks while Ёхо listens, and it blinks every few seconds. After about 45 seconds of tape it rewinds and starts over. It fast-forwards while a model or translation loads, and closes its eyes when there is no microphone. The waveform is now an equalizer: the middle bars follow the low frequencies of your voice, the outer bars follow the high ones, and colour goes from amber to pink as you get louder.
 - **Включение Ёхо** is a separate key, ё/tilde by default, assigned in settings. One press turns Ёхо on and it listens all the time; another press turns it off. While Ёхо is off, the side mouse buttons work as usual.
 - The dictation key (the side mouse button) no longer starts and stops recording. Each press pastes everything said so far into the active field at once, and listening goes on. The translate key does the same, translated into English. A left click on the tray icon and the tray menu item **Выключить / Включить Ёхо** also turn it on and off.

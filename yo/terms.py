@@ -228,6 +228,27 @@ def load_rules() -> tuple[tuple[str, str], ...]:
     return tuple(pairs)
 
 
+# Placeholder for a span that later steps must not touch. Private-use code
+# points only: no letters or digits, so case fixes, \b and user rules
+# cannot change it, and no NUL that would cut the text on the clipboard.
+MARK_OPEN = "\ue000"
+_MARK_CLOSE = "\ue001"
+_MARK_BASE = 0xE100
+_MARK_RE = re.compile("\ue000([\ue100-\uf8ff])\ue001")
+
+
+def hold_mark(index: int) -> str:
+    return f"{MARK_OPEN}{chr(_MARK_BASE + index)}{_MARK_CLOSE}"
+
+
+def restore_marks(text: str, held: list[str]) -> str:
+    def _back(match: re.Match[str]) -> str:
+        i = ord(match.group(1)) - _MARK_BASE
+        return held[i] if i < len(held) else ""
+
+    return _MARK_RE.sub(_back, text)
+
+
 def apply_brand_terms(text: str, rules: tuple[tuple[str, str], ...] | None = None) -> str:
     if not text:
         return text
@@ -235,15 +256,13 @@ def apply_brand_terms(text: str, rules: tuple[tuple[str, str], ...] | None = Non
 
     def _hold(match: re.Match[str]) -> str:
         saved.append(match.group(1))
-        return f"\x00K{len(saved) - 1}\x00"
+        return hold_mark(len(saved) - 1)
 
     text = _LEGAL_KODEKS.sub(_hold, text)
     text = _rewrite_spoken_models(text)
     for heard, write in rules if rules is not None else load_rules():
         text = re.sub(_heard_pattern(heard), write, text, flags=re.IGNORECASE)
-    for i, chunk in enumerate(saved):
-        text = text.replace(f"\x00K{i}\x00", chunk)
-    return text
+    return restore_marks(text, saved)
 
 
 def _parse_user_rules(data: object) -> list[tuple[str, str]]:

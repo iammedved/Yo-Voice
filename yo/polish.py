@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from yo.terms import apply_brand_terms
+from yo.terms import MARK_OPEN, apply_brand_terms, hold_mark, restore_marks
 
 _SPACE_RE = re.compile(r"\s+")
 _BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?…])")
@@ -206,15 +206,13 @@ def _hold_domains(text: str) -> tuple[str, list[str]]:
 
     def _keep(match: re.Match[str]) -> str:
         held.append(match.group(0))
-        return f"\x00D{len(held) - 1}\x00"
+        return hold_mark(len(held) - 1)
 
     return _DOMAIN_RE.sub(_keep, text), held
 
 
 def _restore_held(text: str, held: list[str]) -> str:
-    for i, chunk in enumerate(held):
-        text = text.replace(f"\x00D{i}\x00", chunk)
-    return text
+    return restore_marks(text, held)
 
 
 def _normalize_spaces(text: str) -> str:
@@ -234,7 +232,8 @@ def _uncap_leading(text: str) -> str:
         rest = text[len(first) :]
         return "Ёхо" + rest
     i = 0
-    while i < len(text) and not text[i].isalpha():
+    # A held domain counts as the first word: «google.com» keeps its case.
+    while i < len(text) and not text[i].isalpha() and text[i] != MARK_OPEN:
         i += 1
     if i < len(text) and text[i].isupper():
         return text[:i] + text[i].lower() + text[i + 1 :]
@@ -245,7 +244,9 @@ def _capitalize_sentences(text: str, *, cap_first: bool = True) -> str:
     chars = list(text)
     cap_next = cap_first
     for i, ch in enumerate(chars):
-        if cap_next and ch.isalpha():
+        if cap_next and ch == MARK_OPEN:
+            cap_next = False
+        elif cap_next and ch.isalpha():
             chars[i] = ch.upper()
             cap_next = False
         elif ch in _TERMINAL:

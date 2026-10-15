@@ -28,7 +28,7 @@ class ClipWinSourceTests(unittest.TestCase):
 
     def test_inject_falls_back_to_wm_paste(self):
         src = (project_root() / "yo" / "inject_win.py").read_text(encoding="utf-8")
-        paste = src[src.index("def paste(self") : src.index("def _attach_input")]
+        paste = src[src.index("    def paste(") : src.index("def _attach_input")]
         self.assertIn("WM_PASTE", src)
         self.assertIn("SendInput не доставил клавиши", paste)
         self.assertIn("AttachThreadInput", src)
@@ -186,7 +186,7 @@ class ClipWinSourceTests(unittest.TestCase):
 
     def test_inject_paste_accepts_saved_hwnd(self):
         src = (project_root() / "yo" / "inject_win.py").read_text(encoding="utf-8")
-        self.assertIn("def paste(self, hwnd", src)
+        self.assertIn("        hwnd: int | None = None,\n        overlay_hwnd", src)
         self.assertIn("overlay_hwnd", src)
         self.assertIn("def _focus_hwnd", src)
         self.assertIn("WM_PASTE", src)
@@ -213,7 +213,8 @@ class ClipWinSourceTests(unittest.TestCase):
         self.assertIn("hwnd_int(user32.GetForegroundWindow())", overlay)
         clip = (project_root() / "yo" / "clip_win.py").read_text(encoding="utf-8")
         self.assertIn("clipboard_get()", clip)
-        self.assertIn("clipboard verify mismatch", clip)
+        self.assertIn("changed by another program", clip)
+        self.assertIn("GetClipboardSequenceNumber", clip)
         self.assertIn("CloseHandle.argtypes", src)
         inject_arm = snap[snap.index("def _inject_text") : snap.index("def _flush_paste")]
         self.assertIn("delay = 280", inject_arm)

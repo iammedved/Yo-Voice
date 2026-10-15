@@ -19,6 +19,10 @@ _WHY_PASTE = (
     "Windows не дала вставить текст (окно с повышенными правами или нажатие не дошло); "
     "текст может остаться в буфере обмена."
 )
+_WHY_CLIPBOARD = (
+    "Другая программа заняла или подменила буфер обмена, и текст не удалось ни вставить, "
+    "ни напечатать; он сохранён в файл lost-dictation.txt рядом с журналом."
+)
 _WHY_HOTKEY = "Горячую клавишу уже заняла другая программа."
 _WHY_ASR = "Речь не распозналась локальной моделью."
 _WHY_TRANSLATE = "Локальный перевод не собрал английский текст."
@@ -136,6 +140,8 @@ def _known_cause(action: str, exc: BaseException | None) -> tuple[str, str] | No
         return ("cuda", _WHY_CUDA)
     if _has(folded, "sounddevice", "portaudio", "микрофон", "no input device"):
         return ("microphone", _WHY_MIC)
+    if _has(folded, "текст сохранён в lost-dictation"):
+        return ("paste", _WHY_CLIPBOARD)
     if _is_paste(folded):
         return ("paste", _WHY_PASTE)
     if _has(folded, "клавиша", "hotkey"):

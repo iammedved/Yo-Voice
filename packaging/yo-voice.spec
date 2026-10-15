@@ -63,6 +63,7 @@ hiddenimports = [
     "yo.tray_win",
     "yo.loop_win",
     "yo.clip_win",
+    "yo.cliptext",
     "yo.autostart_win",
     "yo.winapi",
     "yo.asr",

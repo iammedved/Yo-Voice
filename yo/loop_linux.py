@@ -51,6 +51,9 @@ def clipboard_get() -> str | None:
 
 
 def clipboard_set(text: str) -> None:
+    from yo.cliptext import clipboard_text
+
     clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-    clip.set_text(text, -1)
+    # length -1 means a C string: a NUL would silently cut the rest off.
+    clip.set_text(clipboard_text(text), -1)
     clip.store()

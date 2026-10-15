@@ -55,6 +55,8 @@ from yo.speaker import NO_SAMPLE_HINT, SpeakerFilter
 from yo.spectrum import SAMPLE_RATE
 from yo.vad import SpeechGate, quietest_cut, trim_to_speech
 
+LOST_TEXT_FILE = "lost-dictation.txt"
+
 log = logging.getLogger("yo.app")
 HOTKEY_BUSY_HINT = "клавиша ё занята"
 
@@ -874,6 +876,7 @@ class YoApp:
         if not self._clip_owned:
             self._saved_clip = clipboard_get()
             self._clip_owned = True
+        clip_exc: BaseException | None = None
         try:
             clipboard_set(text)
             self._paste_fail = 0
@@ -883,14 +886,18 @@ class YoApp:
             if self._paste_fail < 3:
                 self._paste_q.insert(0, text)
                 timeout_add(120, self._flush_paste)
-            elif self._paste_q:
-                timeout_add(70, self._flush_paste)
-            else:
-                self._paste_armed = False
-                self._paste_fail = 0
-                self._show_defect("вставка текста в активное поле", exc, "paste")
-            return False
-        log.info("в буфер %s символов", len(text))
+                return False
+            self._paste_fail = 0
+            if sys.platform != "win32":
+                self._keep_lost_text(text, exc)
+                self._next_paste()
+                return False
+            # The clipboard will not hold the dictation (another program keeps
+            # replacing it): type it into the field instead of dropping it.
+            clip_exc = exc
+            log.warning("буфер обмена не принял текст — печатаю %s символов напрямую", len(text))
+        else:
+            log.info("в буфер %s символов", len(text))
         self._pending_pastes += 1
         parked = False
         if sys.platform == "win32":
@@ -967,24 +974,56 @@ class YoApp:
             except Exception:
                 log.debug("не удалось вернуть поле перед вставкой", exc_info=True)
         try:
-            self.injector.paste(
-                hwnd=self._paste_hwnd or None,
-                overlay_hwnd=self._overlay_hwnd or None,
-            )
-        except TypeError:
-            self.injector.paste()
+            if clip_exc is not None:
+                delivered = self.injector.paste(
+                    hwnd=self._paste_hwnd or None,
+                    overlay_hwnd=self._overlay_hwnd or None,
+                    text=text,
+                )
+                if not delivered:
+                    self._keep_lost_text(text, clip_exc)
+            else:
+                try:
+                    self.injector.paste(
+                        hwnd=self._paste_hwnd or None,
+                        overlay_hwnd=self._overlay_hwnd or None,
+                    )
+                except TypeError:
+                    self.injector.paste()
         except Exception as exc:
             log.exception("ошибка вставки")
-            self._show_defect("вставка текста в активное поле", exc, "paste")
+            if clip_exc is not None:
+                self._keep_lost_text(text, exc)
+            else:
+                self._show_defect("вставка текста в активное поле", exc, "paste")
         finally:
             self._pending_pastes = max(0, self._pending_pastes - 1)
             if parked and self.session.listening:
                 timeout_add(160, self._unpark_overlay)
+        self._next_paste()
+        return False
+
+    def _next_paste(self) -> None:
         if self._paste_q:
             timeout_add(70, self._flush_paste)
         else:
             self._paste_armed = False
-        return False
+
+    def _keep_lost_text(self, text: str, exc: BaseException) -> None:
+        """Neither the clipboard nor typing delivered the dictation: keep it on disk."""
+        saved = ""
+        try:
+            from yo.paths import xdg_cache
+
+            path = xdg_cache() / LOST_TEXT_FILE
+            path.write_text(text, encoding="utf-8")
+            saved = LOST_TEXT_FILE
+            log.warning("текст не вставлен, сохранён в %s (%s символов)", path, len(text))
+        except Exception:
+            log.exception("не удалось сохранить невставленный текст")
+        err = RuntimeError(f"{exc} | текст сохранён в {saved}" if saved else str(exc))
+        err.__cause__ = exc
+        self._show_defect("вставка текста в активное поле", err, "paste")
 
     def _unpark_overlay(self) -> bool:
         if not self.session.listening:
@@ -997,12 +1036,17 @@ class YoApp:
         return False
 
     def _restore_clipboard(self) -> bool:
-        if self._pending_pastes > 0:
+        # A paste still queued or retrying would land after the restore and
+        # leave the dictation, not the user's clipboard, behind.
+        if self._pending_pastes > 0 or self._paste_armed or self._paste_q:
             timeout_add(80, self._restore_clipboard)
             return False
         if restore_clipboard_after_paste(task=self.session.task):
             if self._clip_owned and self._saved_clip is not None:
-                clipboard_set(self._saved_clip)
+                try:
+                    clipboard_set(self._saved_clip)
+                except Exception:
+                    log.warning("не удалось вернуть прежний буфер обмена", exc_info=True)
         self._saved_clip = None
         self._clip_owned = False
         return False
